@@ -1,31 +1,41 @@
-# Kitten TTS Nano – Fully Offline Browser Demo
+# Kitten TTS Nano – Offline Browser Demo
 
-Static site. **No CDN, no external API, no npm at runtime.**
+Static site. No CDN at runtime. Models + ORT WASM ship in-repo; models are cached in the browser after first Load.
 
-Everything ships inside this repository:
+## Layout
 
-| Path | What |
-|------|------|
-| `index.html` | UI |
-| `vendor/kitten-tts.js` | Bundled KittenTTS browser logic + phonemizer |
-| `vendor/ort/` | ONNX Runtime Web (WASM) |
-| `model/` | Kitten TTS Nano 0.8 fp32 ONNX + voices |
+```
+.
+├── index.html          # markup only
+├── css/
+│   └── styles.css      # liquid-glass UI
+├── js/
+│   └── app.js          # UI + load/generate/stream
+├── model/
+│   ├── voices.npz      # shared voice embeddings
+│   ├── nano/           # ~54 MB
+│   ├── micro/          # ~40 MB
+│   └── mini/           # ~75 MB
+├── vendor/
+│   ├── kitten-tts.js   # bundled inference lib
+│   └── ort/            # ONNX Runtime Web (WASM)
+├── .nojekyll
+└── README.md
+```
 
-## Enable GitHub Pages
+## GitHub Pages
 
-Settings → Pages → Deploy from branch → `main` / root.
-
-URL: `https://mytesytgitacontu.github.io/KittenML-test/`
+Settings → Pages → branch `main` / root.
 
 ## Local preview
 
 ```bash
 npx serve .
-# or python -m http.server 8080
+# or: python -m http.server 8080
 ```
 
-Open `http://localhost:8080` (must be served over http, not `file://`).
+Open over `http://` (not `file://`).
 
 ## License
 
-Apache-2.0 (model + library attribution to KittenML / Algiras kitten-tts-js).
+Apache-2.0 (KittenML models + community JS port attribution).
