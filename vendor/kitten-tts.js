@@ -20658,13 +20658,9 @@ var CACHE_DIR_NAME = "kitten-tts";
 var MODELS = {
   "local/kitten-tts-nano-int8": { label: "local nano int8 (~24 MB)" },
   "local/kitten-tts-nano": { label: "local nano fp32 (~54 MB)" },
-  "local/kitten-tts-micro": { label: "local micro (~40 MB)" },
-  "local/kitten-tts-mini": { label: "local mini (~75 MB)" },
   "KittenML/kitten-tts-nano-0.8-int8": { label: "nano int8 (~24 MB)" },
   "KittenML/kitten-tts-nano-0.8-fp32": { label: "nano fp32 (~57 MB)" },
   "KittenML/kitten-tts-nano-0.8": { label: "nano fp32 (~57 MB)" },
-  "KittenML/kitten-tts-micro-0.8": { label: "micro (~40 MB)" },
-  "KittenML/kitten-tts-mini-0.8": { label: "mini (~80 MB)" },
   "onnx-community/KittenTTS-Nano-v0.8-ONNX": { label: "nano fp32 ONNX (~60 MB)" },
   "onnx-community/KittenTTS-Micro-v0.8-ONNX": { label: "micro int8 ONNX (~45 MB)" },
   "onnx-community/KittenTTS-Mini-v0.8-ONNX": { label: "mini int8 ONNX (~82 MB)" }
@@ -20685,24 +20681,6 @@ var LOCAL_MODEL_FILES = {
     files: [
       { name: "config.json", approx: 700, weight: 0.01 },
       { name: "model.onnx", approx: 56767095, weight: 0.95 },
-      { name: "voices.npz", approx: 3278902, weight: 0.04 }
-    ]
-  },
-  "local/kitten-tts-micro": {
-    dir: "micro",
-    approxBytes: 41384970,
-    files: [
-      { name: "config.json", approx: 500, weight: 0.01 },
-      { name: "model.onnx", approx: 41384970, weight: 0.95 },
-      { name: "voices.npz", approx: 3278902, weight: 0.04 }
-    ]
-  },
-  "local/kitten-tts-mini": {
-    dir: "mini",
-    approxBytes: 78268016,
-    files: [
-      { name: "config.json", approx: 500, weight: 0.01 },
-      { name: "model.onnx", approx: 78268016, weight: 0.95 },
       { name: "voices.npz", approx: 3278902, weight: 0.04 }
     ]
   }
@@ -21667,12 +21645,6 @@ var DEFAULT_VOICE_ALIASES = {
   Leo: "expr-voice-5-m"
 };
 var DEFAULT_VOICE = "Leo";
-function isCoarseMobileUa() {
-  if (typeof navigator === "undefined") return false;
-  return /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent || ""
-  );
-}
 function executionProvidersUseWebGpu(eps) {
   return eps.some((p2) => {
     const n2 = typeof p2 === "string" ? p2 : p2?.name;
@@ -21691,16 +21663,11 @@ function inferErrorText(e2) {
   }
   return String(e2);
 }
-function resolveBrowserWasmThreads(opts = {}) {
-  if (Number.isInteger(opts.wasmThreads) && opts.wasmThreads > 0) {
-    return isCoarseMobileUa() ? 1 : opts.wasmThreads;
-  }
-  if (typeof crossOriginIsolated !== "undefined" && !crossOriginIsolated) return 1;
-  if (isCoarseMobileUa()) return 1;
-  if (typeof navigator !== "undefined" && Number.isInteger(navigator.hardwareConcurrency) && navigator.hardwareConcurrency > 0) {
-    return Math.min(navigator.hardwareConcurrency, 4);
-  }
-  return 4;
+function resolveBrowserWasmThreads(_opts = {}) {
+  const canThread = typeof crossOriginIsolated === "undefined" || crossOriginIsolated === true;
+  if (!canThread) return 1;
+  const cores = typeof navigator !== "undefined" && Number.isInteger(navigator.hardwareConcurrency) && navigator.hardwareConcurrency > 0 ? navigator.hardwareConcurrency : 8;
+  return Math.max(1, Math.min(cores, 16));
 }
 async function createBrowserSession(modelBuffer, runtimeRequested, opts) {
   if (Array.isArray(opts.browserExecutionProviders) && opts.browserExecutionProviders.length > 0) {

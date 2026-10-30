@@ -46,18 +46,9 @@
       </section>
 
       <section class="glass panel">
-        <div class="row2">
-          <div class="box">
-            <div class="t"><span>Speed</span><strong id="speedVal">1.00×</strong></div>
-            <input type="range" id="speedRange" min="0.5" max="2" step="0.05" value="1" />
-          </div>
-          <div class="box toggle">
-            <div>
-              <span style="font-size:.82rem;font-weight:500">Direct stream</span>
-              <small>Play while generating</small>
-            </div>
-            <label class="sw"><input type="checkbox" id="streamToggle" checked /><i></i></label>
-          </div>
+        <div class="box">
+          <div class="t"><span>Speed</span><strong id="speedVal">1.20×</strong></div>
+          <input type="range" id="speedRange" min="0.5" max="2" step="0.05" value="1.2" />
         </div>
       </section>
     </div>
@@ -68,8 +59,6 @@
         <select id="modelSelect">
           <option value="local/kitten-tts-nano-int8" selected>Nano int8 · ~24 MB · recommended</option>
           <option value="local/kitten-tts-nano">Nano fp32 · ~54 MB</option>
-          <option value="local/kitten-tts-micro">Micro · ~40 MB</option>
-          <option value="local/kitten-tts-mini">Mini · ~75 MB · higher quality</option>
         </select>
         <div class="model-meta">
           Approx download: <b id="sizeLabel">~24 MB</b>
@@ -77,15 +66,6 @@
         </div>
         <div class="bar" id="progBar"><i id="progFill"></i></div>
         <div class="prog-line" id="progLine">Idle — press Load model to start.</div>
-        <div class="row2" style="margin-top:2px">
-          <div class="box">
-            <div class="t"><span>WASM threads</span><strong id="threadsVal">1</strong></div>
-            <input type="range" id="threadsRange" min="1" max="4" step="1" value="1" />
-          </div>
-          <div class="box" style="display:flex;align-items:center">
-            <span style="font-size:.72rem;color:var(--muted);line-height:1.3">Applies on Load. GitHub Pages: keep 1 (no SharedArrayBuffer).</span>
-          </div>
-        </div>
         <div class="actions">
           <button class="btn btn-p" id="loadBtn">Load model</button>
           <button class="btn btn-g" id="clearCacheBtn" title="Clear cached models">Clear cache</button>

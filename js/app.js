@@ -11,16 +11,6 @@ const MODELS = {
     approx: 54 * 1024 * 1024,
     files: ["nano/config.json", "nano/model.onnx", "voices.npz"],
   },
-  "local/kitten-tts-micro": {
-    label: "Micro",
-    approx: 40 * 1024 * 1024,
-    files: ["micro/config.json", "micro/model.onnx", "voices.npz"],
-  },
-  "local/kitten-tts-mini": {
-    label: "Mini",
-    approx: 75 * 1024 * 1024,
-    files: ["mini/config.json", "mini/model.onnx", "voices.npz"],
-  },
 };
 
 const FEMALE = ["Bella", "Luna", "Rosie", "Kiki"];
@@ -36,9 +26,6 @@ const textInput = $("textInput");
 const textHint = $("textHint");
 const speedRange = $("speedRange");
 const speedVal = $("speedVal");
-const streamToggle = $("streamToggle");
-const threadsRange = $("threadsRange");
-const threadsVal = $("threadsVal");
 const modelSelect = $("modelSelect");
 const sizeLabel = $("sizeLabel");
 const cacheTag = $("cacheTag");
@@ -60,17 +47,16 @@ let lastSampleRate = 24000;
 let lastBlobUrl = null;
 let modelReady = false;
 let loadedModelId = null;
-let threadsAtLoad = 1;
 
 /** @type {Worker | null} */
 let worker = null;
 let requestSeq = 0;
-/** @type {Map<number, {resolve:Function, reject:Function, onProgress?:Function, onChunk?:Function}>} */
+/** @type {Map<number, {resolve:Function, reject:Function, onProgress?:Function}>} */
 const pending = new Map();
 
 const ALLOWED = /^[A-Za-z\s.,!?'";:\-()]+$/;
 
-/** Root URL of the site (always with trailing slash). Critical on GitHub project pages. */
+/** Root URL of the site (always with trailing slash). */
 function getAssetBase() {
   const u = new URL(window.location.href);
   u.hash = "";
@@ -81,7 +67,6 @@ function getAssetBase() {
   u.pathname = path;
   return u.href;
 }
-
 
 function fmtBytes(n) {
   if (n < 1024) return n + " B";
@@ -109,11 +94,6 @@ function ensureWorker() {
       if (p && p.onProgress) p.onProgress(msg);
       return;
     }
-    if (type === "chunk") {
-      const p = pending.get(requestId);
-      if (p && p.onChunk) p.onChunk(msg);
-      return;
-    }
     const p = pending.get(requestId);
     if (!p) return;
     if (type === "error") {
@@ -121,13 +101,7 @@ function ensureWorker() {
       p.reject(new Error(msg.message || "Worker error"));
       return;
     }
-    if (
-      type === "loaded" ||
-      type === "warmed" ||
-      type === "generated" ||
-      type === "stream-done" ||
-      type === "released"
-    ) {
+    if (type === "loaded" || type === "warmed" || type === "generated" || type === "released") {
       pending.delete(requestId);
       p.resolve(msg);
     }
@@ -164,7 +138,6 @@ function workerCall(payload, hooks = {}) {
       resolve,
       reject,
       onProgress: hooks.onProgress,
-      onChunk: hooks.onChunk,
     });
     w.postMessage({ ...payload, requestId });
   });
@@ -176,10 +149,7 @@ async function requestPersistStorage() {
       const already = navigator.storage.persisted
         ? await navigator.storage.persisted()
         : false;
-      if (!already) {
-        const ok = await navigator.storage.persist();
-        console.log("[storage] persist:", ok);
-      }
+      if (!already) await navigator.storage.persist();
     }
     if (navigator.storage && navigator.storage.estimate) {
       const est = await navigator.storage.estimate();
@@ -187,9 +157,7 @@ async function requestPersistStorage() {
       const quota = est.quota || 0;
       if (quota > 0 && quota - usage < 30 * 1024 * 1024) {
         setStatus(
-          "Low browser storage (" +
-            fmtBytes(quota - usage) +
-            " free). Large models may fail to cache.",
+          "Low browser storage (" + fmtBytes(quota - usage) + " free). Large models may fail to cache.",
           "err",
         );
       }
@@ -234,14 +202,6 @@ speedRange.addEventListener("input", () => {
   speedVal.textContent = Number(speedRange.value).toFixed(2) + "×";
 });
 
-threadsRange.addEventListener("input", () => {
-  threadsVal.textContent = threadsRange.value;
-  if (modelReady && Number(threadsRange.value) !== threadsAtLoad) {
-    setStatus("Threads changed — click Load model to apply.", "");
-    generateBtn.disabled = true;
-  }
-});
-
 function makeVoice(name, g) {
   const b = document.createElement("button");
   b.type = "button";
@@ -263,9 +223,7 @@ async function refreshCacheTag() {
   sizeLabel.textContent = "~" + fmtBytes(MODELS[id].approx);
   let hit = false;
   try {
-    if (typeof hasValidLocalCache === "function") {
-      hit = await hasValidLocalCache(id);
-    }
+    if (typeof hasValidLocalCache === "function") hit = await hasValidLocalCache(id);
   } catch (_) {
     hit = false;
   }
@@ -274,7 +232,6 @@ async function refreshCacheTag() {
 }
 
 modelSelect.addEventListener("change", async () => {
-  // Release previous session immediately
   if (worker && modelReady) {
     try {
       await workerCall({ type: "release" });
@@ -311,17 +268,14 @@ async function loadModel() {
   readyPill.textContent = "Loading…";
 
   await requestPersistStorage();
-
-  // Fresh worker ensures clean state after prior Stop/terminate
   if (!worker) ensureWorker();
 
-  const threads = Number(threadsRange.value) || 1;
+  const assetBase = getAssetBase();
+  progLine.textContent = "assetBase: " + assetBase;
 
   try {
-    const assetBase = getAssetBase();
-    progLine.textContent = "assetBase: " + assetBase;
     await workerCall(
-      { type: "load", modelId: id, wasmThreads: threads, assetBase },
+      { type: "load", modelId: id, assetBase },
       {
         onProgress: (p) => {
           const phase = p.phase === "cache" ? "cache" : "download";
@@ -332,13 +286,8 @@ async function loadModel() {
             (p.total ? " / " + fmtBytes(p.total) : "") +
             " · " +
             phase +
-            (typeof p.overall === "number"
-              ? " · " + Math.round(p.overall * 100) + "%"
-              : "");
-          setProgressOverall(
-            typeof p.overall === "number" ? p.overall : 0,
-            detail,
-          );
+            (typeof p.overall === "number" ? " · " + Math.round(p.overall * 100) + "%" : "");
+          setProgressOverall(typeof p.overall === "number" ? p.overall : 0, detail);
         },
       },
     );
@@ -356,15 +305,13 @@ async function loadModel() {
     readyPill.textContent = meta.label + " ready";
     modelReady = true;
     loadedModelId = id;
-    threadsAtLoad = threads;
     generateBtn.disabled = false;
     await refreshCacheTag();
   } catch (err) {
     console.error(err);
     progBar.classList.remove("indeterminate");
     progLine.textContent = "Failed.";
-    const msg = err && err.message ? err.message : String(err);
-    setStatus("Load failed: " + msg, "err");
+    setStatus("Load failed: " + (err && err.message ? err.message : err), "err");
     readyPill.textContent = "Model not loaded";
     modelReady = false;
   } finally {
@@ -386,60 +333,6 @@ clearCacheBtn.addEventListener("click", async () => {
     setStatus("Could not clear cache: " + e, "err");
   }
 });
-
-let audioCtx = null;
-let playQueue = Promise.resolve();
-let activeSources = [];
-
-function stopPlaybackOnly() {
-  activeSources.forEach((s) => {
-    try {
-      s.stop();
-    } catch (_) {}
-  });
-  activeSources = [];
-  playQueue = Promise.resolve();
-}
-
-function ensureCtx(sampleRate) {
-  if (!audioCtx || audioCtx.sampleRate !== sampleRate) {
-    try {
-      if (audioCtx) audioCtx.close();
-    } catch (_) {}
-    try {
-      audioCtx = new AudioContext({ sampleRate });
-    } catch {
-      audioCtx = new AudioContext();
-    }
-  }
-  if (audioCtx.state === "suspended") audioCtx.resume();
-  return audioCtx;
-}
-
-function enqueuePlay(float32, sampleRate) {
-  const ctx = ensureCtx(sampleRate);
-  playQueue = playQueue.then(
-    () =>
-      new Promise((resolve) => {
-        const buf = ctx.createBuffer(1, float32.length, sampleRate);
-        buf.copyToChannel(float32, 0);
-        const src = ctx.createBufferSource();
-        src.buffer = buf;
-        src.connect(ctx.destination);
-        activeSources.push(src);
-        src.onended = () => {
-          activeSources = activeSources.filter((s) => s !== src);
-          resolve();
-        };
-        try {
-          src.start();
-        } catch {
-          resolve();
-        }
-      }),
-  );
-  return playQueue;
-}
 
 function floatToWav(float32Array, sampleRate) {
   const n = float32Array.length;
@@ -470,8 +363,6 @@ function floatToWav(float32Array, sampleRate) {
 }
 
 function stopAll() {
-  stopPlaybackOnly();
-  // Hard-abort inference: terminate worker (10.B)
   killWorker();
   stopBtn.disabled = true;
   generateBtn.disabled = true;
@@ -505,80 +396,26 @@ async function generate() {
   }
   lastPcm = null;
 
-  const speed = Number(speedRange.value) || 1;
-  const stream = streamToggle.checked;
+  const speed = Number(speedRange.value) || 1.2;
   const voice = selectedVoice;
 
   try {
-    if (stream) {
-      setStatus("Streaming…", "load");
-      const chunks = [];
-      let sampleRate = 24000;
-      await workerCall(
-        { type: "stream", text, voice, speed },
-        {
-          onChunk: (msg) => {
-            const pcm = new Float32Array(msg.pcm);
-            sampleRate = msg.sampleRate || sampleRate;
-            chunks.push(pcm);
-            setStatus(
-              "Chunk " +
-                (msg.index + 1) +
-                ": “" +
-                String(msg.text || "").slice(0, 36) +
-                "”",
-              "load",
-            );
-            enqueuePlay(pcm, sampleRate);
-          },
-        },
-      );
-      if (chunks.length) {
-        const total = chunks.reduce((n, a) => n + a.length, 0);
-        const combined = new Float32Array(total);
-        let off = 0;
-        for (const c of chunks) {
-          combined.set(c, off);
-          off += c.length;
-        }
-        lastPcm = combined;
-        lastSampleRate = sampleRate;
-        const blob = new Blob([floatToWav(combined, sampleRate)], {
-          type: "audio/wav",
-        });
-        lastBlobUrl = URL.createObjectURL(blob);
-        audioPlayer.src = lastBlobUrl;
-        audioPlayer.style.display = "block";
-        downloadBtn.disabled = false;
-        setStatus(
-          "Done · " + (total / sampleRate).toFixed(2) + "s · " + voice,
-          "ok",
-        );
-      }
-    } else {
-      setStatus("Generating…", "load");
-      const msg = await workerCall({ type: "generate", text, voice, speed });
-      const pcm = new Float32Array(msg.pcm);
-      lastPcm = pcm;
-      lastSampleRate = msg.sampleRate || 24000;
-      const blob = new Blob([floatToWav(pcm, lastSampleRate)], {
-        type: "audio/wav",
-      });
-      lastBlobUrl = URL.createObjectURL(blob);
-      audioPlayer.src = lastBlobUrl;
-      audioPlayer.style.display = "block";
-      audioPlayer.play().catch(() => {});
-      downloadBtn.disabled = false;
-      setStatus(
-        "Done · " +
-          (msg.duration != null
-            ? Number(msg.duration).toFixed(2)
-            : (pcm.length / lastSampleRate).toFixed(2)) +
-          "s · " +
-          voice,
-        "ok",
-      );
-    }
+    setStatus("Generating…", "load");
+    const msg = await workerCall({ type: "generate", text, voice, speed });
+    const pcm = new Float32Array(msg.pcm);
+    lastPcm = pcm;
+    lastSampleRate = msg.sampleRate || 24000;
+    const blob = new Blob([floatToWav(pcm, lastSampleRate)], { type: "audio/wav" });
+    lastBlobUrl = URL.createObjectURL(blob);
+    audioPlayer.src = lastBlobUrl;
+    audioPlayer.style.display = "block";
+    audioPlayer.play().catch(() => {});
+    downloadBtn.disabled = false;
+    const dur =
+      msg.duration != null
+        ? Number(msg.duration).toFixed(2)
+        : (pcm.length / lastSampleRate).toFixed(2);
+    setStatus("Done · " + dur + "s · " + voice + " · " + speed.toFixed(2) + "×", "ok");
   } catch (err) {
     console.error(err);
     const msg = err && err.message ? err.message : String(err);
@@ -592,13 +429,10 @@ async function generate() {
 
 downloadBtn.addEventListener("click", () => {
   if (!lastPcm) return;
-  const blob = new Blob([floatToWav(lastPcm, lastSampleRate)], {
-    type: "audio/wav",
-  });
+  const blob = new Blob([floatToWav(lastPcm, lastSampleRate)], { type: "audio/wav" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download =
-    "kitten-" + selectedVoice.toLowerCase() + "-" + Date.now() + ".wav";
+  a.download = "kitten-" + selectedVoice.toLowerCase() + "-" + Date.now() + ".wav";
   a.click();
   URL.revokeObjectURL(a.href);
 });
@@ -607,7 +441,6 @@ loadBtn.addEventListener("click", loadModel);
 generateBtn.addEventListener("click", generate);
 stopBtn.addEventListener("click", stopAll);
 
-// init — no auto download
 requestPersistStorage();
 refreshCacheTag();
 setStatus("Choose a model and click Load model.", "");

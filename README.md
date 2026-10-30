@@ -1,40 +1,21 @@
 # Kitten TTS – Offline Browser Demo
 
-Static site. Models + ORT WASM ship in-repo. Inference runs in a **Web Worker** (Stop = `worker.terminate()`). Models cache in **IndexedDB v3**.
+Static site. Models + ORT WASM in-repo. Inference in a **Web Worker**. Cache in **IndexedDB v3**.
 
-## Layout
+## Models
 
-```
-.
-├── index.html
-├── css/styles.css
-├── js/
-│   ├── app.js           # UI
-│   └── tts-worker.js    # load / generate / stream
-├── model/
-│   ├── voices.npz
-│   ├── nano-int8/       # ~24 MB (default)
-│   ├── nano/            # ~54 MB fp32
-│   ├── micro/
-│   └── mini/
-├── vendor/
-│   ├── kitten-tts.js
-│   └── ort/
-└── README.md
-```
+- **Nano int8** (~24 MB) — default
+- **Nano fp32** (~54 MB)
 
 ## Notes
 
-- Default model: **Nano int8**
-- Load is manual (no auto-download)
-- Progress is weighted (config 1% / onnx 95% / voices 4%)
-- `navigator.storage.persist()` requested on load
-- After **Stop**, click **Load model** again
+- Manual Load (no auto-download)
+- Default speed **1.2×**
+- WASM threads = max available cores (1 if page is not cross-origin isolated)
+- Stop terminates the worker (reload model after Stop)
 
 ## Preview
 
 ```bash
 npx serve .
 ```
-
-Use `http://` (not `file://`).
