@@ -70,6 +70,19 @@ const pending = new Map();
 
 const ALLOWED = /^[A-Za-z\s.,!?'";:\-()]+$/;
 
+/** Root URL of the site (always with trailing slash). Critical on GitHub project pages. */
+function getAssetBase() {
+  const u = new URL(window.location.href);
+  u.hash = "";
+  u.search = "";
+  let path = u.pathname || "/";
+  if (path.endsWith("/index.html")) path = path.slice(0, -10);
+  if (!path.endsWith("/")) path += "/";
+  u.pathname = path;
+  return u.href;
+}
+
+
 function fmtBytes(n) {
   if (n < 1024) return n + " B";
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
@@ -305,7 +318,7 @@ async function loadModel() {
   const threads = Number(threadsRange.value) || 1;
 
   try {
-    const assetBase = new URL("./", window.location.href).href;
+    const assetBase = getAssetBase();
     await workerCall(
       { type: "load", modelId: id, wasmThreads: threads, assetBase },
       {

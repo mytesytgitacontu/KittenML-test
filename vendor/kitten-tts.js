@@ -20886,17 +20886,34 @@ var _assetBase = "";
 function setAssetBase(base) {
   _assetBase = base || "";
 }
+function normalizeBase(href) {
+  try {
+    const u2 = new URL(href);
+    u2.hash = "";
+    u2.search = "";
+    let path = u2.pathname || "/";
+    if (path.endsWith("/index.html")) path = path.slice(0, -10);
+    if (!path.endsWith("/")) path += "/";
+    u2.pathname = path;
+    return u2.href;
+  } catch {
+    return href.endsWith("/") ? href : href + "/";
+  }
+}
 function resolveAssetBase(explicit) {
-  if (explicit) return explicit.endsWith("/") ? explicit : explicit + "/";
-  if (_assetBase) return _assetBase.endsWith("/") ? _assetBase : _assetBase + "/";
+  if (explicit && explicit.trim()) return normalizeBase(explicit);
+  if (_assetBase && _assetBase.trim()) return normalizeBase(_assetBase);
   try {
     const loc = globalThis.location;
-    if (loc && typeof loc.href === "string" && !/\/js\/[^/]+$/.test(loc.pathname || "")) {
-      return new URL("./", loc.href).href;
+    if (loc && typeof loc.href === "string") {
+      const path = loc.pathname || "";
+      if (!path.includes("/js/")) return normalizeBase(loc.href);
     }
   } catch {
   }
-  return new URL("./", globalThis.location?.href || "http://localhost/").href;
+  throw new Error(
+    "assetBase is required (page root URL). Open the site via its GitHub Pages URL and click Load model again."
+  );
 }
 function fileUrl(dir, name, assetBase) {
   const root = resolveAssetBase(assetBase);
@@ -20948,7 +20965,7 @@ async function fetchWithProgress(dir, name, approx, weight, weightBefore, onProg
   }
   const absUrl = fileUrl(dir, name, assetBase);
   const resp = await fetch(absUrl, { cache: "no-store" });
-  if (!resp.ok) throw new Error(`Failed to fetch ${label}: HTTP ${resp.status}`);
+  if (!resp.ok) throw new Error(`Failed to fetch ${label}: HTTP ${resp.status} (${absUrl})`);
   const totalHeader = Number(resp.headers.get("content-length") || 0);
   const total = totalHeader > 0 ? totalHeader : approx;
   let buf;
