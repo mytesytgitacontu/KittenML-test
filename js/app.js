@@ -319,6 +319,7 @@ async function loadModel() {
 
   try {
     const assetBase = getAssetBase();
+    progLine.textContent = "assetBase: " + assetBase;
     await workerCall(
       { type: "load", modelId: id, wasmThreads: threads, assetBase },
       {

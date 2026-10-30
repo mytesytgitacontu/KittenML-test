@@ -6,6 +6,19 @@ import { KittenTTS } from '../vendor/kitten-tts.js';
 
 let tts = null;
 
+/** Derive site root from worker URL: .../js/tts-worker.js → .../ */
+function siteRootFromWorker() {
+  const u = new URL(self.location.href);
+  u.hash = '';
+  u.search = '';
+  let path = u.pathname || '/';
+  if (path.includes('/js/')) path = path.replace(/\/js\/.*$/, '/');
+  if (!path.endsWith('/')) path += '/';
+  u.pathname = path;
+  return u.href;
+}
+
+
 function post(msg) {
   self.postMessage(msg);
 }
@@ -19,11 +32,15 @@ self.onmessage = async (ev) => {
         try { await tts.release(); } catch (_) {}
       }
       tts = null;
+      const assetBase = (data.assetBase && String(data.assetBase).trim())
+        ? data.assetBase
+        : siteRootFromWorker();
+      post({ type: 'progress', requestId, file: 'init', loaded: 0, total: 1, phase: 'start', overall: 0, detail: 'assetBase=' + assetBase });
       tts = await KittenTTS.from_pretrained(data.modelId, {
         runtime: 'cpu',
         wasmSimd: true,
         wasmThreads: data.wasmThreads || 1,
-        assetBase: data.assetBase || '',
+        assetBase,
         onProgress: (p) => post({ type: 'progress', requestId, ...p }),
       });
       // warm phonemizer

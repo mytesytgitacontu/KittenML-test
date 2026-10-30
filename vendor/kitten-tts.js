@@ -20893,6 +20893,9 @@ function normalizeBase(href) {
     u2.search = "";
     let path = u2.pathname || "/";
     if (path.endsWith("/index.html")) path = path.slice(0, -10);
+    if (path.includes("/js/")) {
+      path = path.replace(/\/js\/.*$/, "/");
+    }
     if (!path.endsWith("/")) path += "/";
     u2.pathname = path;
     return u2.href;
@@ -20901,19 +20904,19 @@ function normalizeBase(href) {
   }
 }
 function resolveAssetBase(explicit) {
-  if (explicit && explicit.trim()) return normalizeBase(explicit);
-  if (_assetBase && _assetBase.trim()) return normalizeBase(_assetBase);
+  if (explicit && String(explicit).trim()) return normalizeBase(String(explicit).trim());
+  if (_assetBase && String(_assetBase).trim()) return normalizeBase(String(_assetBase).trim());
   try {
-    const loc = globalThis.location;
-    if (loc && typeof loc.href === "string") {
-      const path = loc.pathname || "";
-      if (!path.includes("/js/")) return normalizeBase(loc.href);
+    if (typeof globalThis.location !== "undefined" && globalThis.location?.href) {
+      return normalizeBase(globalThis.location.href);
     }
   } catch {
   }
-  throw new Error(
-    "assetBase is required (page root URL). Open the site via its GitHub Pages URL and click Load model again."
-  );
+  try {
+    return new URL("../", import.meta.url).href;
+  } catch {
+  }
+  throw new Error("assetBase is required (page root URL).");
 }
 function fileUrl(dir, name, assetBase) {
   const root = resolveAssetBase(assetBase);
@@ -20965,7 +20968,8 @@ async function fetchWithProgress(dir, name, approx, weight, weightBefore, onProg
   }
   const absUrl = fileUrl(dir, name, assetBase);
   const resp = await fetch(absUrl, { cache: "no-store" });
-  if (!resp.ok) throw new Error(`Failed to fetch ${label}: HTTP ${resp.status} (${absUrl})`);
+  if (!resp.ok) throw new Error(`Failed to fetch ${label}: HTTP ${resp.status}
+URL: ${absUrl}`);
   const totalHeader = Number(resp.headers.get("content-length") || 0);
   const total = totalHeader > 0 ? totalHeader : approx;
   let buf;
@@ -21026,7 +21030,7 @@ async function downloadModel(repoId, opts = {}) {
   const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
   if (LOCAL_MODEL_FILES[repoId]) {
     const spec = LOCAL_MODEL_FILES[repoId];
-    const assetBase = typeof opts.assetBase === "string" ? opts.assetBase : void 0;
+    const assetBase = typeof opts.assetBase === "string" && opts.assetBase.trim() ? opts.assetBase.trim() : void 0;
     if (assetBase) setAssetBase(assetBase);
     let weightBefore = 0;
     let configBuf = null;
