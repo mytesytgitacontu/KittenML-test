@@ -1,344 +1,598 @@
-import { KittenTTS, clearLocalModelCache } from "../vendor/kitten-tts.js";
+import { clearLocalModelCache, hasValidLocalCache } from "../vendor/kitten-tts.js";
 
-    const MODELS = {
-      "local/kitten-tts-nano":  { label: "Nano",  approx: 54 * 1024 * 1024, files: ["nano/config.json","nano/model.onnx","voices.npz"] },
-      "local/kitten-tts-micro": { label: "Micro", approx: 40 * 1024 * 1024, files: ["micro/config.json","micro/model.onnx","voices.npz"] },
-      "local/kitten-tts-mini":  { label: "Mini",  approx: 75 * 1024 * 1024, files: ["mini/config.json","mini/model.onnx","voices.npz"] },
-    };
-    const FEMALE = ["Bella","Luna","Rosie","Kiki"];
-    const MALE = ["Jasper","Bruno","Hugo","Leo"];
+const MODELS = {
+  "local/kitten-tts-nano-int8": {
+    label: "Nano int8",
+    approx: 24 * 1024 * 1024,
+    files: ["nano-int8/config.json", "nano-int8/model.onnx", "voices.npz"],
+  },
+  "local/kitten-tts-nano": {
+    label: "Nano fp32",
+    approx: 54 * 1024 * 1024,
+    files: ["nano/config.json", "nano/model.onnx", "voices.npz"],
+  },
+  "local/kitten-tts-micro": {
+    label: "Micro",
+    approx: 40 * 1024 * 1024,
+    files: ["micro/config.json", "micro/model.onnx", "voices.npz"],
+  },
+  "local/kitten-tts-mini": {
+    label: "Mini",
+    approx: 75 * 1024 * 1024,
+    files: ["mini/config.json", "mini/model.onnx", "voices.npz"],
+  },
+};
 
-    const $ = (id) => document.getElementById(id);
-    const textInput = $("textInput"), textHint = $("textHint");
-    const speedRange = $("speedRange"), speedVal = $("speedVal");
-    const streamToggle = $("streamToggle");
-    const threadsRange = $("threadsRange"), threadsVal = $("threadsVal");
-    const modelSelect = $("modelSelect"), sizeLabel = $("sizeLabel"), cacheTag = $("cacheTag");
-    const progBar = $("progBar"), progFill = $("progFill"), progLine = $("progLine");
-    const loadBtn = $("loadBtn"), clearCacheBtn = $("clearCacheBtn");
-    const generateBtn = $("generateBtn"), downloadBtn = $("downloadBtn"), stopBtn = $("stopBtn");
-    const statusEl = $("status"), audioPlayer = $("audioPlayer"), readyPill = $("readyPill");
+const FEMALE = ["Bella", "Luna", "Rosie", "Kiki"];
+const MALE = ["Jasper", "Bruno", "Hugo", "Leo"];
 
-    let tts = null, selectedVoice = "Jasper", lastAudio = null, lastBlobUrl = null;
-    let abortGen = false, audioCtx = null, playQueue = Promise.resolve(), activeSources = [];
-    let fileProgress = {}; // file -> {loaded,total}
+const $ = (id) => {
+  const el = document.getElementById(id);
+  if (!el) throw new Error("Missing element #" + id);
+  return el;
+};
 
-    const ALLOWED = /^[A-Za-z\s.,!?'";:\-()]+$/;
+const textInput = $("textInput");
+const textHint = $("textHint");
+const speedRange = $("speedRange");
+const speedVal = $("speedVal");
+const streamToggle = $("streamToggle");
+const threadsRange = $("threadsRange");
+const threadsVal = $("threadsVal");
+const modelSelect = $("modelSelect");
+const sizeLabel = $("sizeLabel");
+const cacheTag = $("cacheTag");
+const progBar = $("progBar");
+const progFill = $("progFill");
+const progLine = $("progLine");
+const loadBtn = $("loadBtn");
+const clearCacheBtn = $("clearCacheBtn");
+const generateBtn = $("generateBtn");
+const downloadBtn = $("downloadBtn");
+const stopBtn = $("stopBtn");
+const statusEl = $("status");
+const audioPlayer = $("audioPlayer");
+const readyPill = $("readyPill");
 
-    function fmtBytes(n) {
-      if (n < 1024) return n + " B";
-      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
-      return (n / (1024 * 1024)).toFixed(1) + " MB";
+let selectedVoice = "Jasper";
+let lastPcm = null;
+let lastSampleRate = 24000;
+let lastBlobUrl = null;
+let modelReady = false;
+let loadedModelId = null;
+let threadsAtLoad = 1;
+
+/** @type {Worker | null} */
+let worker = null;
+let requestSeq = 0;
+/** @type {Map<number, {resolve:Function, reject:Function, onProgress?:Function, onChunk?:Function}>} */
+const pending = new Map();
+
+const ALLOWED = /^[A-Za-z\s.,!?'";:\-()]+$/;
+
+function fmtBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function setStatus(msg, type = "") {
+  statusEl.textContent = msg;
+  statusEl.className = "status " + type;
+}
+
+function filterInput(v) {
+  return v.replace(/[^A-Za-z\s.,!?'";:\-()]/g, "");
+}
+
+function ensureWorker() {
+  if (worker) return worker;
+  worker = new Worker(new URL("./tts-worker.js", import.meta.url), { type: "module" });
+  worker.onmessage = (ev) => {
+    const msg = ev.data || {};
+    const { type, requestId } = msg;
+    if (type === "progress") {
+      const p = pending.get(requestId);
+      if (p && p.onProgress) p.onProgress(msg);
+      return;
     }
-    function setStatus(msg, type = "") {
-      statusEl.textContent = msg;
-      statusEl.className = "status " + type;
+    if (type === "chunk") {
+      const p = pending.get(requestId);
+      if (p && p.onChunk) p.onChunk(msg);
+      return;
     }
-    function filterInput(v) { return v.replace(/[^A-Za-z\s.,!?'";:\-()]/g, ""); }
+    const p = pending.get(requestId);
+    if (!p) return;
+    if (type === "error") {
+      pending.delete(requestId);
+      p.reject(new Error(msg.message || "Worker error"));
+      return;
+    }
+    if (
+      type === "loaded" ||
+      type === "warmed" ||
+      type === "generated" ||
+      type === "stream-done" ||
+      type === "released"
+    ) {
+      pending.delete(requestId);
+      p.resolve(msg);
+    }
+  };
+  worker.onerror = (err) => {
+    console.error("Worker error", err);
+    setStatus("Worker failed: " + (err.message || err), "err");
+  };
+  return worker;
+}
 
-    textInput.addEventListener("input", () => {
-      const f = filterInput(textInput.value);
-      if (f !== textInput.value) {
-        const pos = textInput.selectionStart;
-        textInput.value = f;
-        textInput.setSelectionRange(Math.max(0, pos - 1), Math.max(0, pos - 1));
-        textHint.textContent = "Non-English characters removed.";
-        textHint.classList.add("err");
-      } else {
-        textHint.textContent = "A–Z, spaces, basic punctuation only.";
-        textHint.classList.remove("err");
-      }
+function killWorker() {
+  if (worker) {
+    try {
+      worker.terminate();
+    } catch (_) {}
+  }
+  worker = null;
+  for (const [, p] of pending) {
+    try {
+      p.reject(new Error("Stopped"));
+    } catch (_) {}
+  }
+  pending.clear();
+  modelReady = false;
+  loadedModelId = null;
+}
+
+function workerCall(payload, hooks = {}) {
+  const w = ensureWorker();
+  const requestId = ++requestSeq;
+  return new Promise((resolve, reject) => {
+    pending.set(requestId, {
+      resolve,
+      reject,
+      onProgress: hooks.onProgress,
+      onChunk: hooks.onChunk,
     });
-    textInput.addEventListener("paste", (e) => {
-      e.preventDefault();
-      document.execCommand("insertText", false, filterInput((e.clipboardData || window.clipboardData).getData("text")));
-    });
-    speedRange.addEventListener("input", () => { speedVal.textContent = Number(speedRange.value).toFixed(2) + "×"; });
-    threadsRange.addEventListener("input", () => { threadsVal.textContent = threadsRange.value; });
+    w.postMessage({ ...payload, requestId });
+  });
+}
 
-    function makeVoice(name, g) {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "vbtn " + g + (name === selectedVoice ? " active" : "");
-      b.textContent = name;
-      b.addEventListener("click", () => {
-        selectedVoice = name;
-        document.querySelectorAll(".vbtn").forEach((x) => x.classList.remove("active"));
-        b.classList.add("active");
-      });
-      return b;
-    }
-    FEMALE.forEach((v) => $("voicesFemale").appendChild(makeVoice(v, "f")));
-    MALE.forEach((v) => $("voicesMale").appendChild(makeVoice(v, "m")));
-
-    async function idbHas(key) {
-      try {
-        const db = await new Promise((resolve, reject) => {
-          const req = indexedDB.open("kitten-tts-idb", 1);
-          req.onupgradeneeded = () => {
-            const d = req.result;
-            if (!d.objectStoreNames.contains("models")) d.createObjectStore("models");
-          };
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-        return await new Promise((resolve) => {
-          const tx = db.transaction("models", "readonly");
-          const req = tx.objectStore("models").get("v1:" + key);
-          req.onsuccess = () => {
-            const v = req.result;
-            resolve(!!v);
-          };
-          req.onerror = () => resolve(false);
-        });
-      } catch { return false; }
-    }
-
-    async function cacheHasModel(id) {
-      try {
-        const files = MODELS[id].files;
-        // Prefer IndexedDB (primary store)
-        let allIdb = true;
-        for (const f of files) {
-          if (!(await idbHas(f))) { allIdb = false; break; }
-        }
-        if (allIdb) return true;
-        // Fallback: Cache API with absolute URLs
-        if (typeof caches === "undefined") return false;
-        const cache = await caches.open("kitten-tts-models-v2");
-        for (const f of files) {
-          const abs = new URL("./model/" + f, location.href).href;
-          if (!(await cache.match(abs))) return false;
-        }
-        return true;
-      } catch { return false; }
-    }
-
-    async function refreshCacheTag() {
-      const id = modelSelect.value;
-      sizeLabel.textContent = "~" + fmtBytes(MODELS[id].approx);
-      const hit = await cacheHasModel(id);
-      cacheTag.textContent = hit ? "cached in browser" : "not cached — will download";
-      cacheTag.className = "cache-tag " + (hit ? "hit" : "miss");
-    }
-    modelSelect.addEventListener("change", () => {
-      // switching model invalidates current session
-      tts = null;
-      generateBtn.disabled = true;
-      readyPill.textContent = "Model not loaded";
-      setStatus("Model changed — click Load model.", "");
-      refreshCacheTag();
-      progFill.style.width = "0%";
-      progBar.classList.remove("indeterminate");
-      progLine.textContent = "Idle — press Load model to start.";
-    });
-
-    function updateProgressUI() {
-      const files = Object.keys(fileProgress);
-      if (!files.length) return;
-      let loaded = 0, total = 0;
-      for (const f of files) {
-        loaded += fileProgress[f].loaded;
-        total += fileProgress[f].total || fileProgress[f].loaded;
-      }
-      const pct = total > 0 ? Math.min(100, (loaded / total) * 100) : 0;
-      progBar.classList.remove("indeterminate");
-      progFill.style.width = pct.toFixed(1) + "%";
-      const phases = files.map((f) => {
-        const p = fileProgress[f];
-        const tag = p.phase === "cache" ? "cache" : "dl";
-        return f.split("/").pop() + " " + fmtBytes(p.loaded) + (p.total ? "/" + fmtBytes(p.total) : "") + " [" + tag + "]";
-      });
-      progLine.textContent = fmtBytes(loaded) + " / ~" + fmtBytes(total) + " (" + pct.toFixed(0) + "%) · " + phases.join(" · ");
-    }
-
-    async function loadModel() {
-      const id = modelSelect.value;
-      const meta = MODELS[id];
-      loadBtn.disabled = true;
-      generateBtn.disabled = true;
-      downloadBtn.disabled = true;
-      fileProgress = {};
-      progFill.style.width = "0%";
-      progBar.classList.add("indeterminate");
-      progLine.textContent = "Starting…";
-      setStatus("Loading " + meta.label + "…", "load");
-      readyPill.textContent = "Loading…";
-
-      try {
-        if (tts && tts.release) { try { await tts.release(); } catch (_) {} }
-        tts = await KittenTTS.from_pretrained(id, {
-          runtime: "cpu",
-          wasmSimd: true,
-          wasmThreads: Number(threadsRange.value) || 1,
-          onProgress: ({ file, loaded, total, phase }) => {
-            fileProgress[file] = { loaded, total: total || loaded, phase };
-            updateProgressUI();
-          },
-        });
-        progBar.classList.remove("indeterminate");
-        progFill.style.width = "100%";
-        progLine.textContent = "Ready — " + meta.label + " loaded (cached for next time).";
-        setStatus(meta.label + " ready. Generate speech below.", "ok");
-        readyPill.textContent = meta.label + " ready";
-        generateBtn.disabled = false;
-        await refreshCacheTag();
-      } catch (err) {
-        console.error(err);
-        progBar.classList.remove("indeterminate");
-        progLine.textContent = "Failed.";
-        setStatus("Load failed: " + (err && err.message ? err.message : err), "err");
-        readyPill.textContent = "Model not loaded";
-      } finally {
-        loadBtn.disabled = false;
+async function requestPersistStorage() {
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      const already = navigator.storage.persisted
+        ? await navigator.storage.persisted()
+        : false;
+      if (!already) {
+        const ok = await navigator.storage.persist();
+        console.log("[storage] persist:", ok);
       }
     }
-
-    clearCacheBtn.addEventListener("click", async () => {
-      try {
-        if (typeof clearLocalModelCache === "function") {
-          await clearLocalModelCache();
-        } else {
-          await caches.delete("kitten-tts-models-v2");
-          await caches.delete("kitten-tts-models");
-          await new Promise((resolve) => {
-            const req = indexedDB.deleteDatabase("kitten-tts-idb");
-            req.onsuccess = () => resolve();
-            req.onerror = () => resolve();
-            req.onblocked = () => resolve();
-          });
-        }
-        tts = null;
-        generateBtn.disabled = true;
-        readyPill.textContent = "Model not loaded";
-        setStatus("Browser model cache cleared.", "ok");
-        await refreshCacheTag();
-        progFill.style.width = "0%";
-        progLine.textContent = "Cache cleared — next Load will re-download.";
-      } catch (e) {
-        setStatus("Could not clear cache: " + e, "err");
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      const usage = est.usage || 0;
+      const quota = est.quota || 0;
+      if (quota > 0 && quota - usage < 30 * 1024 * 1024) {
+        setStatus(
+          "Low browser storage (" +
+            fmtBytes(quota - usage) +
+            " free). Large models may fail to cache.",
+          "err",
+        );
       }
-    });
+    }
+  } catch (e) {
+    console.warn("storage persist/estimate failed", e);
+  }
+}
 
-    function stopPlayback() {
-      abortGen = true;
-      activeSources.forEach((s) => { try { s.stop(); } catch (_) {} });
-      activeSources = [];
-      playQueue = Promise.resolve();
-      stopBtn.disabled = true;
+function insertFilteredText(text) {
+  const start = textInput.selectionStart ?? textInput.value.length;
+  const end = textInput.selectionEnd ?? textInput.value.length;
+  const filtered = filterInput(text);
+  const v = textInput.value;
+  textInput.value = v.slice(0, start) + filtered + v.slice(end);
+  const pos = start + filtered.length;
+  textInput.setSelectionRange(pos, pos);
+  textInput.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+textInput.addEventListener("input", () => {
+  const f = filterInput(textInput.value);
+  if (f !== textInput.value) {
+    const pos = textInput.selectionStart;
+    textInput.value = f;
+    textInput.setSelectionRange(Math.max(0, pos - 1), Math.max(0, pos - 1));
+    textHint.textContent = "Non-English characters removed.";
+    textHint.classList.add("err");
+  } else {
+    textHint.textContent = "A–Z, spaces, basic punctuation only.";
+    textHint.classList.remove("err");
+  }
+});
+
+textInput.addEventListener("paste", (e) => {
+  e.preventDefault();
+  const t = (e.clipboardData || window.clipboardData).getData("text");
+  insertFilteredText(t);
+});
+
+speedRange.addEventListener("input", () => {
+  speedVal.textContent = Number(speedRange.value).toFixed(2) + "×";
+});
+
+threadsRange.addEventListener("input", () => {
+  threadsVal.textContent = threadsRange.value;
+  if (modelReady && Number(threadsRange.value) !== threadsAtLoad) {
+    setStatus("Threads changed — click Load model to apply.", "");
+    generateBtn.disabled = true;
+  }
+});
+
+function makeVoice(name, g) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "vbtn " + g + (name === selectedVoice ? " active" : "");
+  b.textContent = name;
+  b.addEventListener("click", () => {
+    selectedVoice = name;
+    document.querySelectorAll(".vbtn").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+  });
+  return b;
+}
+
+FEMALE.forEach((v) => $("voicesFemale").appendChild(makeVoice(v, "f")));
+MALE.forEach((v) => $("voicesMale").appendChild(makeVoice(v, "m")));
+
+async function refreshCacheTag() {
+  const id = modelSelect.value;
+  sizeLabel.textContent = "~" + fmtBytes(MODELS[id].approx);
+  let hit = false;
+  try {
+    if (typeof hasValidLocalCache === "function") {
+      hit = await hasValidLocalCache(id);
     }
-    function ensureCtx() {
-      if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 24000 });
-      if (audioCtx.state === "suspended") audioCtx.resume();
-      return audioCtx;
+  } catch (_) {
+    hit = false;
+  }
+  cacheTag.textContent = hit ? "cached in browser" : "not cached — will download";
+  cacheTag.className = "cache-tag " + (hit ? "hit" : "miss");
+}
+
+modelSelect.addEventListener("change", async () => {
+  // Release previous session immediately
+  if (worker && modelReady) {
+    try {
+      await workerCall({ type: "release" });
+    } catch (_) {}
+  }
+  modelReady = false;
+  loadedModelId = null;
+  generateBtn.disabled = true;
+  readyPill.textContent = "Model not loaded";
+  setStatus("Model changed — click Load model.", "");
+  progFill.style.width = "0%";
+  progBar.classList.remove("indeterminate");
+  progLine.textContent = "Idle — press Load model.";
+  await refreshCacheTag();
+});
+
+function setProgressOverall(overall, detail) {
+  const pct = Math.max(0, Math.min(100, (overall || 0) * 100));
+  progBar.classList.remove("indeterminate");
+  progFill.style.width = pct.toFixed(1) + "%";
+  if (detail) progLine.textContent = detail;
+}
+
+async function loadModel() {
+  const id = modelSelect.value;
+  const meta = MODELS[id];
+  loadBtn.disabled = true;
+  generateBtn.disabled = true;
+  downloadBtn.disabled = true;
+  progFill.style.width = "0%";
+  progBar.classList.add("indeterminate");
+  progLine.textContent = "Starting…";
+  setStatus("Loading " + meta.label + "…", "load");
+  readyPill.textContent = "Loading…";
+
+  await requestPersistStorage();
+
+  // Fresh worker ensures clean state after prior Stop/terminate
+  if (!worker) ensureWorker();
+
+  const threads = Number(threadsRange.value) || 1;
+
+  try {
+    await workerCall(
+      { type: "load", modelId: id, wasmThreads: threads },
+      {
+        onProgress: (p) => {
+          const phase = p.phase === "cache" ? "cache" : "download";
+          const detail =
+            (p.file || "") +
+            " · " +
+            fmtBytes(p.loaded || 0) +
+            (p.total ? " / " + fmtBytes(p.total) : "") +
+            " · " +
+            phase +
+            (typeof p.overall === "number"
+              ? " · " + Math.round(p.overall * 100) + "%"
+              : "");
+          setProgressOverall(
+            typeof p.overall === "number" ? p.overall : 0,
+            detail,
+          );
+        },
+      },
+    );
+
+    setStatus("Warming up…", "load");
+    progLine.textContent = "Warming phonemizer + session…";
+    try {
+      await workerCall({ type: "warmup", voice: selectedVoice });
+    } catch (e) {
+      console.warn("warmup failed", e);
     }
-    function enqueuePlay(float32, sampleRate) {
-      const ctx = ensureCtx();
-      playQueue = playQueue.then(() => new Promise((resolve) => {
-        if (abortGen) { resolve(); return; }
+
+    setProgressOverall(1, "Ready — " + meta.label + " loaded.");
+    setStatus(meta.label + " ready.", "ok");
+    readyPill.textContent = meta.label + " ready";
+    modelReady = true;
+    loadedModelId = id;
+    threadsAtLoad = threads;
+    generateBtn.disabled = false;
+    await refreshCacheTag();
+  } catch (err) {
+    console.error(err);
+    progBar.classList.remove("indeterminate");
+    progLine.textContent = "Failed.";
+    const msg = err && err.message ? err.message : String(err);
+    setStatus("Load failed: " + msg, "err");
+    readyPill.textContent = "Model not loaded";
+    modelReady = false;
+  } finally {
+    loadBtn.disabled = false;
+  }
+}
+
+clearCacheBtn.addEventListener("click", async () => {
+  try {
+    killWorker();
+    await clearLocalModelCache();
+    generateBtn.disabled = true;
+    readyPill.textContent = "Model not loaded";
+    setStatus("Browser model cache cleared.", "ok");
+    await refreshCacheTag();
+    progFill.style.width = "0%";
+    progLine.textContent = "Cache cleared — next Load will re-download.";
+  } catch (e) {
+    setStatus("Could not clear cache: " + e, "err");
+  }
+});
+
+let audioCtx = null;
+let playQueue = Promise.resolve();
+let activeSources = [];
+
+function stopPlaybackOnly() {
+  activeSources.forEach((s) => {
+    try {
+      s.stop();
+    } catch (_) {}
+  });
+  activeSources = [];
+  playQueue = Promise.resolve();
+}
+
+function ensureCtx(sampleRate) {
+  if (!audioCtx || audioCtx.sampleRate !== sampleRate) {
+    try {
+      if (audioCtx) audioCtx.close();
+    } catch (_) {}
+    try {
+      audioCtx = new AudioContext({ sampleRate });
+    } catch {
+      audioCtx = new AudioContext();
+    }
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function enqueuePlay(float32, sampleRate) {
+  const ctx = ensureCtx(sampleRate);
+  playQueue = playQueue.then(
+    () =>
+      new Promise((resolve) => {
         const buf = ctx.createBuffer(1, float32.length, sampleRate);
         buf.copyToChannel(float32, 0);
         const src = ctx.createBufferSource();
         src.buffer = buf;
         src.connect(ctx.destination);
         activeSources.push(src);
-        src.onended = () => { activeSources = activeSources.filter((s) => s !== src); resolve(); };
-        src.start();
-      }));
-      return playQueue;
-    }
-
-    function floatToWav(float32Array, sampleRate) {
-      const n = float32Array.length;
-      const buffer = new ArrayBuffer(44 + n * 2);
-      const view = new DataView(buffer);
-      const ws = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
-      ws(0, "RIFF"); view.setUint32(4, 36 + n * 2, true); ws(8, "WAVE"); ws(12, "fmt ");
-      view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-      view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
-      view.setUint16(32, 2, true); view.setUint16(34, 16, true); ws(36, "data"); view.setUint32(40, n * 2, true);
-      let o = 44;
-      for (let i = 0; i < n; i++, o += 2) {
-        let s = Math.max(-1, Math.min(1, float32Array[i]));
-        view.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-      }
-      return buffer;
-    }
-
-    async function generate() {
-      const text = textInput.value.trim();
-      if (!text) { setStatus("Enter text.", "err"); return; }
-      if (!ALLOWED.test(text)) { setStatus("Invalid characters.", "err"); return; }
-      if (!tts) { setStatus("Load a model first.", "err"); return; }
-
-      abortGen = false;
-      generateBtn.disabled = true; downloadBtn.disabled = true; stopBtn.disabled = false;
-      audioPlayer.style.display = "none";
-      if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
-      lastAudio = null;
-      const speed = Number(speedRange.value) || 1;
-      const stream = streamToggle.checked;
-      const opts = { voice: selectedVoice, speed };
-
-      try {
-        if (stream) {
-          setStatus("Streaming…", "load");
-          const chunks = [];
-          let i = 0;
-          for await (const { text: ct, audio } of tts.stream(text, opts)) {
-            if (abortGen) break;
-            i++;
-            chunks.push(audio.data);
-            setStatus("Chunk " + i + ": “" + ct.slice(0, 36) + (ct.length > 36 ? "…" : "") + "”", "load");
-            enqueuePlay(audio.data, audio.sampling_rate);
-          }
-          if (!abortGen && chunks.length) {
-            const total = chunks.reduce((n, a) => n + a.length, 0);
-            const combined = new Float32Array(total);
-            let off = 0;
-            for (const c of chunks) { combined.set(c, off); off += c.length; }
-            lastAudio = {
-              data: combined, duration: total / 24000,
-              toBlob() { return new Blob([floatToWav(combined, 24000)], { type: "audio/wav" }); },
-            };
-            downloadBtn.disabled = false;
-            setStatus("Done · " + lastAudio.duration.toFixed(2) + "s · " + selectedVoice, "ok");
-          } else if (abortGen) setStatus("Stopped.", "err");
-        } else {
-          setStatus("Generating…", "load");
-          const audio = await tts.generate(text, opts);
-          if (abortGen) { setStatus("Stopped.", "err"); return; }
-          lastAudio = audio;
-          lastBlobUrl = URL.createObjectURL(audio.toBlob());
-          audioPlayer.src = lastBlobUrl;
-          audioPlayer.style.display = "block";
-          audioPlayer.play().catch(() => {});
-          downloadBtn.disabled = false;
-          setStatus("Done · " + audio.duration.toFixed(2) + "s · " + selectedVoice, "ok");
+        src.onended = () => {
+          activeSources = activeSources.filter((s) => s !== src);
+          resolve();
+        };
+        try {
+          src.start();
+        } catch {
+          resolve();
         }
-      } catch (err) {
-        console.error(err);
-        setStatus("Failed: " + (err && err.message ? err.message : err), "err");
-      } finally {
-        generateBtn.disabled = !tts;
-        stopBtn.disabled = true;
+      }),
+  );
+  return playQueue;
+}
+
+function floatToWav(float32Array, sampleRate) {
+  const n = float32Array.length;
+  const buffer = new ArrayBuffer(44 + n * 2);
+  const view = new DataView(buffer);
+  const ws = (o, s) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i));
+  };
+  ws(0, "RIFF");
+  view.setUint32(4, 36 + n * 2, true);
+  ws(8, "WAVE");
+  ws(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ws(36, "data");
+  view.setUint32(40, n * 2, true);
+  let o = 44;
+  for (let i = 0; i < n; i++, o += 2) {
+    let s = Math.max(-1, Math.min(1, float32Array[i]));
+    view.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return buffer;
+}
+
+function stopAll() {
+  stopPlaybackOnly();
+  // Hard-abort inference: terminate worker (10.B)
+  killWorker();
+  stopBtn.disabled = true;
+  generateBtn.disabled = true;
+  readyPill.textContent = "Stopped — reload model";
+  setStatus("Stopped. Click Load model to continue.", "err");
+  progLine.textContent = "Worker terminated — model must be loaded again.";
+}
+
+async function generate() {
+  const text = textInput.value.trim();
+  if (!text) {
+    setStatus("Enter text.", "err");
+    return;
+  }
+  if (!ALLOWED.test(text)) {
+    setStatus("Invalid characters.", "err");
+    return;
+  }
+  if (!modelReady || !worker) {
+    setStatus("Load a model first.", "err");
+    return;
+  }
+
+  generateBtn.disabled = true;
+  downloadBtn.disabled = true;
+  stopBtn.disabled = false;
+  audioPlayer.style.display = "none";
+  if (lastBlobUrl) {
+    URL.revokeObjectURL(lastBlobUrl);
+    lastBlobUrl = null;
+  }
+  lastPcm = null;
+
+  const speed = Number(speedRange.value) || 1;
+  const stream = streamToggle.checked;
+  const voice = selectedVoice;
+
+  try {
+    if (stream) {
+      setStatus("Streaming…", "load");
+      const chunks = [];
+      let sampleRate = 24000;
+      await workerCall(
+        { type: "stream", text, voice, speed },
+        {
+          onChunk: (msg) => {
+            const pcm = new Float32Array(msg.pcm);
+            sampleRate = msg.sampleRate || sampleRate;
+            chunks.push(pcm);
+            setStatus(
+              "Chunk " +
+                (msg.index + 1) +
+                ": “" +
+                String(msg.text || "").slice(0, 36) +
+                "”",
+              "load",
+            );
+            enqueuePlay(pcm, sampleRate);
+          },
+        },
+      );
+      if (chunks.length) {
+        const total = chunks.reduce((n, a) => n + a.length, 0);
+        const combined = new Float32Array(total);
+        let off = 0;
+        for (const c of chunks) {
+          combined.set(c, off);
+          off += c.length;
+        }
+        lastPcm = combined;
+        lastSampleRate = sampleRate;
+        const blob = new Blob([floatToWav(combined, sampleRate)], {
+          type: "audio/wav",
+        });
+        lastBlobUrl = URL.createObjectURL(blob);
+        audioPlayer.src = lastBlobUrl;
+        audioPlayer.style.display = "block";
+        downloadBtn.disabled = false;
+        setStatus(
+          "Done · " + (total / sampleRate).toFixed(2) + "s · " + voice,
+          "ok",
+        );
       }
+    } else {
+      setStatus("Generating…", "load");
+      const msg = await workerCall({ type: "generate", text, voice, speed });
+      const pcm = new Float32Array(msg.pcm);
+      lastPcm = pcm;
+      lastSampleRate = msg.sampleRate || 24000;
+      const blob = new Blob([floatToWav(pcm, lastSampleRate)], {
+        type: "audio/wav",
+      });
+      lastBlobUrl = URL.createObjectURL(blob);
+      audioPlayer.src = lastBlobUrl;
+      audioPlayer.style.display = "block";
+      audioPlayer.play().catch(() => {});
+      downloadBtn.disabled = false;
+      setStatus(
+        "Done · " +
+          (msg.duration != null
+            ? Number(msg.duration).toFixed(2)
+            : (pcm.length / lastSampleRate).toFixed(2)) +
+          "s · " +
+          voice,
+        "ok",
+      );
     }
+  } catch (err) {
+    console.error(err);
+    const msg = err && err.message ? err.message : String(err);
+    if (msg === "Stopped") setStatus("Stopped.", "err");
+    else setStatus("Failed: " + msg, "err");
+  } finally {
+    stopBtn.disabled = true;
+    generateBtn.disabled = !modelReady;
+  }
+}
 
-    downloadBtn.addEventListener("click", () => {
-      if (!lastAudio) return;
-      const blob = typeof lastAudio.toBlob === "function" ? lastAudio.toBlob() : new Blob([floatToWav(lastAudio.data, 24000)], { type: "audio/wav" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "kitten-" + selectedVoice.toLowerCase() + "-" + Date.now() + ".wav";
-      a.click();
-      URL.revokeObjectURL(a.href);
-    });
+downloadBtn.addEventListener("click", () => {
+  if (!lastPcm) return;
+  const blob = new Blob([floatToWav(lastPcm, lastSampleRate)], {
+    type: "audio/wav",
+  });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download =
+    "kitten-" + selectedVoice.toLowerCase() + "-" + Date.now() + ".wav";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
 
-    loadBtn.addEventListener("click", loadModel);
-    generateBtn.addEventListener("click", generate);
-    stopBtn.addEventListener("click", stopPlayback);
+loadBtn.addEventListener("click", loadModel);
+generateBtn.addEventListener("click", generate);
+stopBtn.addEventListener("click", stopAll);
 
-    // NO auto-download
-    refreshCacheTag();
-    setStatus("Choose a model and click Load model.", "");
+// init — no auto download
+requestPersistStorage();
+refreshCacheTag();
+setStatus("Choose a model and click Load model.", "");

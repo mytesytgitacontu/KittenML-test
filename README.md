@@ -1,41 +1,40 @@
-# Kitten TTS Nano – Offline Browser Demo
+# Kitten TTS – Offline Browser Demo
 
-Static site. No CDN at runtime. Models + ORT WASM ship in-repo; models are cached in the browser after first Load.
+Static site. Models + ORT WASM ship in-repo. Inference runs in a **Web Worker** (Stop = `worker.terminate()`). Models cache in **IndexedDB v3**.
 
 ## Layout
 
 ```
 .
-├── index.html          # markup only
-├── css/
-│   └── styles.css      # liquid-glass UI
+├── index.html
+├── css/styles.css
 ├── js/
-│   └── app.js          # UI + load/generate/stream
+│   ├── app.js           # UI
+│   └── tts-worker.js    # load / generate / stream
 ├── model/
-│   ├── voices.npz      # shared voice embeddings
-│   ├── nano/           # ~54 MB
-│   ├── micro/          # ~40 MB
-│   └── mini/           # ~75 MB
+│   ├── voices.npz
+│   ├── nano-int8/       # ~24 MB (default)
+│   ├── nano/            # ~54 MB fp32
+│   ├── micro/
+│   └── mini/
 ├── vendor/
-│   ├── kitten-tts.js   # bundled inference lib
-│   └── ort/            # ONNX Runtime Web (WASM)
-├── .nojekyll
+│   ├── kitten-tts.js
+│   └── ort/
 └── README.md
 ```
 
-## GitHub Pages
+## Notes
 
-Settings → Pages → branch `main` / root.
+- Default model: **Nano int8**
+- Load is manual (no auto-download)
+- Progress is weighted (config 1% / onnx 95% / voices 4%)
+- `navigator.storage.persist()` requested on load
+- After **Stop**, click **Load model** again
 
-## Local preview
+## Preview
 
 ```bash
 npx serve .
-# or: python -m http.server 8080
 ```
 
-Open over `http://` (not `file://`).
-
-## License
-
-Apache-2.0 (KittenML models + community JS port attribution).
+Use `http://` (not `file://`).
