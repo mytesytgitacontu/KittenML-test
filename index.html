@@ -260,6 +260,7 @@
         tts = await KittenTTS.from_pretrained(MODEL_ID, {
           runtime: "cpu",
           wasmSimd: true,
+          wasmThreads: 1,
         });
         setStatus("Model ready. Type text and press Generate.", "success");
         generateBtn.textContent = "Generate Speech";
