@@ -1,27 +1,31 @@
-# Kitten TTS Nano – Browser Demo
+# Kitten TTS Nano – Fully Offline Browser Demo
 
-Static site that runs **Kitten TTS Nano 0.8** entirely in the browser.
+Static site. **No CDN, no external API, no npm at runtime.**
 
-- Model: [KittenML/kitten-tts-nano-0.8-fp32](https://huggingface.co/KittenML/kitten-tts-nano-0.8-fp32) via [onnx-community/KittenTTS-Nano-v0.8-ONNX](https://huggingface.co/onnx-community/KittenTTS-Nano-v0.8-ONNX)
-- Library: [kitten-tts-js](https://github.com/Algiras/kitten-tts-js)
-- Voices: Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo
-- Text input restricted to English letters + basic punctuation
-- No server – inference happens on the user's device (WASM / WebGPU)
+Everything ships inside this repository:
 
-## GitHub Pages
+| Path | What |
+|------|------|
+| `index.html` | UI |
+| `vendor/kitten-tts.js` | Bundled KittenTTS browser logic + phonemizer |
+| `vendor/ort/` | ONNX Runtime Web (WASM) |
+| `model/` | Kitten TTS Nano 0.8 fp32 ONNX + voices |
 
-Enable **Settings → Pages → Deploy from branch → main / (root)**.
+## Enable GitHub Pages
 
-Site will be available at:  
-`https://mytesytgitacontu.github.io/KittenML-test/`
+Settings → Pages → Deploy from branch → `main` / root.
+
+URL: `https://mytesytgitacontu.github.io/KittenML-test/`
 
 ## Local preview
 
 ```bash
 npx serve .
-# or any static file server
+# or python -m http.server 8080
 ```
+
+Open `http://localhost:8080` (must be served over http, not `file://`).
 
 ## License
 
-Apache-2.0 (same as the model).
+Apache-2.0 (model + library attribution to KittenML / Algiras kitten-tts-js).
