@@ -1,4 +1,4 @@
-import { KittenTTS } from "./vendor/kitten-tts.js";
+import { KittenTTS, clearLocalModelCache } from "../vendor/kitten-tts.js";
 
     const MODELS = {
       "local/kitten-tts-nano":  { label: "Nano",  approx: 54 * 1024 * 1024, files: ["nano/config.json","nano/model.onnx","voices.npz"] },
@@ -7,7 +7,6 @@ import { KittenTTS } from "./vendor/kitten-tts.js";
     };
     const FEMALE = ["Bella","Luna","Rosie","Kiki"];
     const MALE = ["Jasper","Bruno","Hugo","Leo"];
-    const CACHE = "kitten-tts-models";
 
     const $ = (id) => document.getElementById(id);
     const textInput = $("textInput"), textHint = $("textHint");
@@ -72,12 +71,44 @@ import { KittenTTS } from "./vendor/kitten-tts.js";
     FEMALE.forEach((v) => $("voicesFemale").appendChild(makeVoice(v, "f")));
     MALE.forEach((v) => $("voicesMale").appendChild(makeVoice(v, "m")));
 
+    async function idbHas(key) {
+      try {
+        const db = await new Promise((resolve, reject) => {
+          const req = indexedDB.open("kitten-tts-idb", 1);
+          req.onupgradeneeded = () => {
+            const d = req.result;
+            if (!d.objectStoreNames.contains("models")) d.createObjectStore("models");
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+        return await new Promise((resolve) => {
+          const tx = db.transaction("models", "readonly");
+          const req = tx.objectStore("models").get("v1:" + key);
+          req.onsuccess = () => {
+            const v = req.result;
+            resolve(!!v);
+          };
+          req.onerror = () => resolve(false);
+        });
+      } catch { return false; }
+    }
+
     async function cacheHasModel(id) {
       try {
-        const cache = await caches.open(CACHE);
         const files = MODELS[id].files;
+        // Prefer IndexedDB (primary store)
+        let allIdb = true;
         for (const f of files) {
-          if (!(await cache.match("local-v1:" + f))) return false;
+          if (!(await idbHas(f))) { allIdb = false; break; }
+        }
+        if (allIdb) return true;
+        // Fallback: Cache API with absolute URLs
+        if (typeof caches === "undefined") return false;
+        const cache = await caches.open("kitten-tts-models-v2");
+        for (const f of files) {
+          const abs = new URL("./model/" + f, location.href).href;
+          if (!(await cache.match(abs))) return false;
         }
         return true;
       } catch { return false; }
@@ -165,7 +196,21 @@ import { KittenTTS } from "./vendor/kitten-tts.js";
 
     clearCacheBtn.addEventListener("click", async () => {
       try {
-        await caches.delete(CACHE);
+        if (typeof clearLocalModelCache === "function") {
+          await clearLocalModelCache();
+        } else {
+          await caches.delete("kitten-tts-models-v2");
+          await caches.delete("kitten-tts-models");
+          await new Promise((resolve) => {
+            const req = indexedDB.deleteDatabase("kitten-tts-idb");
+            req.onsuccess = () => resolve();
+            req.onerror = () => resolve();
+            req.onblocked = () => resolve();
+          });
+        }
+        tts = null;
+        generateBtn.disabled = true;
+        readyPill.textContent = "Model not loaded";
         setStatus("Browser model cache cleared.", "ok");
         await refreshCacheTag();
         progFill.style.width = "0%";

@@ -20656,12 +20656,11 @@ var init_phonemizer = __esm({
 var HF_BASE = "https://huggingface.co";
 var CACHE_DIR_NAME = "kitten-tts";
 var MODELS = {
-  "local/kitten-tts-nano": { label: "local nano fp32 (~57 MB)" },
+  "local/kitten-tts-nano": { label: "local nano fp32 (~54 MB)" },
   "local/kitten-tts-micro": { label: "local micro (~40 MB)" },
-  "local/kitten-tts-mini": { label: "local mini (~80 MB)" },
+  "local/kitten-tts-mini": { label: "local mini (~75 MB)" },
   "KittenML/kitten-tts-nano-0.8-int8": { label: "nano int8 (~24 MB)" },
   "KittenML/kitten-tts-nano-0.8-fp32": { label: "nano fp32 (~57 MB)" },
-  // Legacy alias — HuggingFace redirects this to kitten-tts-nano-0.8-fp32
   "KittenML/kitten-tts-nano-0.8": { label: "nano fp32 (~57 MB)" },
   "KittenML/kitten-tts-micro-0.8": { label: "micro (~40 MB)" },
   "KittenML/kitten-tts-mini-0.8": { label: "mini (~80 MB)" },
@@ -20773,43 +20772,115 @@ async function resolveModelConfig(repoId) {
     );
   }
 }
-async function downloadModel(repoId, opts = {}) {
-  const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
-  const LOCAL_MODELS = {
-    "local/kitten-tts-nano": { dir: "nano", approxBytes: 57e6 },
-    "local/kitten-tts-micro": { dir: "micro", approxBytes: 41e6 },
-    "local/kitten-tts-mini": { dir: "mini", approxBytes: 78e6 }
-  };
-  async function fetchWithProgress(url, fileLabel, approx) {
-    const cacheKey = "local-v1:" + fileLabel;
-    try {
-      if (typeof caches !== "undefined") {
-        const cache = await caches.open("kitten-tts-models");
-        const hit = await cache.match(cacheKey);
-        if (hit) {
-          const buf2 = await hit.arrayBuffer();
-          if (onProgress) onProgress({ file: fileLabel, loaded: buf2.byteLength, total: buf2.byteLength, phase: "cache" });
-          return buf2;
-        }
+var LOCAL_MODELS = {
+  "local/kitten-tts-nano": { dir: "nano", approxBytes: 56767095 },
+  "local/kitten-tts-micro": { dir: "micro", approxBytes: 41384970 },
+  "local/kitten-tts-mini": { dir: "mini", approxBytes: 78268016 }
+};
+var IDB_NAME = "kitten-tts-idb";
+var IDB_STORE = "models";
+var IDB_VERSION = 1;
+var CACHE_NAME = "kitten-tts-models-v2";
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
       }
-    } catch (_2) {
-    }
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`Failed to fetch ${fileLabel}: HTTP ${resp.status}`);
-    const totalHeader = Number(resp.headers.get("content-length") || 0);
-    const total = totalHeader > 0 ? totalHeader : approx;
-    if (!resp.body || !resp.body.getReader) {
-      const buf2 = await resp.arrayBuffer();
-      if (onProgress) onProgress({ file: fileLabel, loaded: buf2.byteLength, total: buf2.byteLength, phase: "download" });
-      try {
-        if (typeof caches !== "undefined") {
-          const cache = await caches.open("kitten-tts-models");
-          await cache.put(cacheKey, new Response(buf2.slice(0), { headers: { "Content-Type": "application/octet-stream" } }));
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("indexedDB open failed"));
+  });
+}
+async function idbGet(key) {
+  try {
+    if (typeof indexedDB === "undefined") return null;
+    const db = await idbOpen();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => {
+        const v2 = req.result;
+        if (v2 instanceof ArrayBuffer) resolve(v2);
+        else if (v2 instanceof Blob) v2.arrayBuffer().then(resolve, reject);
+        else if (v2 && typeof v2 === "object" && v2.buffer instanceof ArrayBuffer) {
+          const u2 = v2;
+          resolve(u2.buffer.slice(u2.byteOffset, u2.byteOffset + u2.byteLength));
+        } else resolve(null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
+async function idbSet(key, buffer) {
+  try {
+    if (typeof indexedDB === "undefined") return;
+    const db = await idbOpen();
+    const blob = new Blob([buffer], { type: "application/octet-stream" });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).put(blob, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error("idb abort"));
+    });
+  } catch (e2) {
+    console.warn("[kitten-tts] IndexedDB write failed:", e2);
+  }
+}
+async function cacheGetAbs(absUrl) {
+  try {
+    if (typeof caches === "undefined") return null;
+    const cache = await caches.open(CACHE_NAME);
+    const hit = await cache.match(absUrl);
+    if (!hit) return null;
+    return await hit.arrayBuffer();
+  } catch {
+    return null;
+  }
+}
+async function cacheSetAbs(absUrl, buffer) {
+  try {
+    if (typeof caches === "undefined") return;
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(
+      absUrl,
+      new Response(buffer.slice(0), {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": String(buffer.byteLength)
         }
-      } catch (_2) {
-      }
-      return buf2;
-    }
+      })
+    );
+  } catch (e2) {
+    console.warn("[kitten-tts] Cache API write failed:", e2);
+  }
+}
+async function fetchWithProgress(url, fileLabel, approx, onProgress) {
+  const absUrl = new URL(url, globalThis.location?.href || "http://localhost/").href;
+  const idbKey = "v1:" + fileLabel;
+  const fromIdb = await idbGet(idbKey);
+  if (fromIdb && fromIdb.byteLength > 0) {
+    if (onProgress) onProgress({ file: fileLabel, loaded: fromIdb.byteLength, total: fromIdb.byteLength, phase: "cache" });
+    return fromIdb;
+  }
+  const fromCache = await cacheGetAbs(absUrl);
+  if (fromCache && fromCache.byteLength > 0) {
+    if (onProgress) onProgress({ file: fileLabel, loaded: fromCache.byteLength, total: fromCache.byteLength, phase: "cache" });
+    void idbSet(idbKey, fromCache);
+    return fromCache;
+  }
+  if (onProgress) onProgress({ file: fileLabel, loaded: 0, total: approx, phase: "download" });
+  const resp = await fetch(absUrl, { cache: "no-store" });
+  if (!resp.ok) throw new Error(`Failed to fetch ${fileLabel}: HTTP ${resp.status}`);
+  const totalHeader = Number(resp.headers.get("content-length") || 0);
+  const total = totalHeader > 0 ? totalHeader : approx;
+  let buf;
+  if (resp.body && typeof resp.body.getReader === "function") {
     const reader = resp.body.getReader();
     const chunks = [];
     let loaded = 0;
@@ -20826,28 +20897,27 @@ async function downloadModel(repoId, opts = {}) {
       out.set(c2, off);
       off += c2.byteLength;
     }
-    const buf = out.buffer;
-    try {
-      if (typeof caches !== "undefined") {
-        const cache = await caches.open("kitten-tts-models");
-        await cache.put(cacheKey, new Response(buf.slice(0), { headers: { "Content-Type": "application/octet-stream" } }));
-      }
-    } catch (_2) {
-    }
-    if (onProgress) onProgress({ file: fileLabel, loaded, total: loaded, phase: "done" });
-    return buf;
+    buf = out.buffer;
+  } else {
+    buf = await resp.arrayBuffer();
+    if (onProgress) onProgress({ file: fileLabel, loaded: buf.byteLength, total: buf.byteLength, phase: "download" });
   }
+  await idbSet(idbKey, buf);
+  await cacheSetAbs(absUrl, buf);
+  if (onProgress) onProgress({ file: fileLabel, loaded: buf.byteLength, total: buf.byteLength, phase: "done" });
+  return buf;
+}
+async function downloadModel(repoId, opts = {}) {
+  const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
   if (LOCAL_MODELS[repoId]) {
     const meta = LOCAL_MODELS[repoId];
     const base = new URL("./model/", globalThis.location?.href || "http://localhost/").href;
     const dir = meta.dir;
-    if (onProgress) onProgress({ file: dir, loaded: 0, total: meta.approxBytes, phase: "start" });
-    const configText = new TextDecoder().decode(await fetchWithProgress(base + dir + "/config.json", dir + "/config.json", 2048));
-    const config2 = JSON.parse(configText);
-    const [modelBuffer2, voicesBuffer2] = await Promise.all([
-      fetchWithProgress(base + dir + "/model.onnx", dir + "/model.onnx", meta.approxBytes),
-      fetchWithProgress(base + "voices.npz", "voices.npz", 33e5)
-    ]);
+    if (onProgress) onProgress({ file: dir + "/model.onnx", loaded: 0, total: meta.approxBytes, phase: "start" });
+    const configBuf = await fetchWithProgress(base + dir + "/config.json", dir + "/config.json", 2048, onProgress);
+    const config2 = decodeJson(configBuf);
+    const modelBuffer2 = await fetchWithProgress(base + dir + "/model.onnx", dir + "/model.onnx", meta.approxBytes, onProgress);
+    const voicesBuffer2 = await fetchWithProgress(base + "voices.npz", "voices.npz", 3278902, onProgress);
     return { modelBuffer: modelBuffer2, voicesBuffer: voicesBuffer2, config: config2 };
   }
   if (!MODELS[repoId]) {
@@ -20863,6 +20933,26 @@ async function downloadModel(repoId, opts = {}) {
     fetchCached(repoId, voicesFile)
   ]);
   return { modelBuffer, voicesBuffer, config };
+}
+async function clearLocalModelCache() {
+  try {
+    if (typeof caches !== "undefined") {
+      await caches.delete(CACHE_NAME);
+      await caches.delete("kitten-tts-models");
+    }
+  } catch {
+  }
+  try {
+    if (typeof indexedDB !== "undefined") {
+      await new Promise((resolve, reject) => {
+        const req = indexedDB.deleteDatabase(IDB_NAME);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+        req.onblocked = () => resolve();
+      });
+    }
+  } catch {
+  }
 }
 
 // src/npz-loader.ts
@@ -21743,6 +21833,7 @@ export {
   RawAudio,
   TextCleaner,
   TextPreprocessor,
+  clearLocalModelCache,
   downloadModel,
   encodeWav,
   loadNpz,
