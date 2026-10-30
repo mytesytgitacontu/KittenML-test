@@ -305,8 +305,9 @@ async function loadModel() {
   const threads = Number(threadsRange.value) || 1;
 
   try {
+    const assetBase = new URL("./", window.location.href).href;
     await workerCall(
-      { type: "load", modelId: id, wasmThreads: threads },
+      { type: "load", modelId: id, wasmThreads: threads, assetBase },
       {
         onProgress: (p) => {
           const phase = p.phase === "cache" ? "cache" : "download";

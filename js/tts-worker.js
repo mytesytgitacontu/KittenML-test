@@ -23,6 +23,7 @@ self.onmessage = async (ev) => {
         runtime: 'cpu',
         wasmSimd: true,
         wasmThreads: data.wasmThreads || 1,
+        assetBase: data.assetBase || '',
         onProgress: (p) => post({ type: 'progress', requestId, ...p }),
       });
       // warm phonemizer

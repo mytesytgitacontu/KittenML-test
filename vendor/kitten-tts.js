@@ -20882,10 +20882,27 @@ function fileKey(dir, name) {
   if (name === "voices.npz") return "v3:voices.npz";
   return `v3:${dir}/${name}`;
 }
-function fileUrl(dir, name) {
-  const base = new URL("./model/", globalThis.location?.href || "http://localhost/").href;
-  if (name === "voices.npz") return base + "voices.npz";
-  return base + dir + "/" + name;
+var _assetBase = "";
+function setAssetBase(base) {
+  _assetBase = base || "";
+}
+function resolveAssetBase(explicit) {
+  if (explicit) return explicit.endsWith("/") ? explicit : explicit + "/";
+  if (_assetBase) return _assetBase.endsWith("/") ? _assetBase : _assetBase + "/";
+  try {
+    const loc = globalThis.location;
+    if (loc && typeof loc.href === "string" && !/\/js\/[^/]+$/.test(loc.pathname || "")) {
+      return new URL("./", loc.href).href;
+    }
+  } catch {
+  }
+  return new URL("./", globalThis.location?.href || "http://localhost/").href;
+}
+function fileUrl(dir, name, assetBase) {
+  const root = resolveAssetBase(assetBase);
+  const modelRoot = new URL("model/", root).href;
+  if (name === "voices.npz") return modelRoot + "voices.npz";
+  return modelRoot + dir + "/" + name;
 }
 function assertSize(buf, approx, label) {
   if (approx < 1e4) {
@@ -20898,7 +20915,7 @@ function assertSize(buf, approx, label) {
     );
   }
 }
-async function fetchWithProgress(dir, name, approx, weight, weightBefore, onProgress) {
+async function fetchWithProgress(dir, name, approx, weight, weightBefore, onProgress, assetBase) {
   const key = fileKey(dir, name);
   const label = name === "voices.npz" ? "voices.npz" : `${dir}/${name}`;
   const meta = await idbGetMeta(key);
@@ -20929,7 +20946,7 @@ async function fetchWithProgress(dir, name, approx, weight, weightBefore, onProg
       overall: weightBefore
     });
   }
-  const absUrl = fileUrl(dir, name);
+  const absUrl = fileUrl(dir, name, assetBase);
   const resp = await fetch(absUrl, { cache: "no-store" });
   if (!resp.ok) throw new Error(`Failed to fetch ${label}: HTTP ${resp.status}`);
   const totalHeader = Number(resp.headers.get("content-length") || 0);
@@ -20992,6 +21009,8 @@ async function downloadModel(repoId, opts = {}) {
   const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
   if (LOCAL_MODEL_FILES[repoId]) {
     const spec = LOCAL_MODEL_FILES[repoId];
+    const assetBase = typeof opts.assetBase === "string" ? opts.assetBase : void 0;
+    if (assetBase) setAssetBase(assetBase);
     let weightBefore = 0;
     let configBuf = null;
     let modelBuffer2 = null;
@@ -21003,7 +21022,8 @@ async function downloadModel(repoId, opts = {}) {
         f2.approx,
         f2.weight,
         weightBefore,
-        onProgress
+        onProgress,
+        assetBase
       );
       weightBefore += f2.weight;
       if (f2.name === "config.json") configBuf = buf;
@@ -21748,7 +21768,8 @@ var BrowserKittenTTS = class _BrowserKittenTTS {
     }
     const { modelBuffer, voicesBuffer, config } = await downloadModel(modelId, opts);
     {
-      const base = typeof globalThis.location !== "undefined" && globalThis.location?.href ? new URL("./vendor/ort/", globalThis.location.href).href : "./vendor/ort/";
+      const root = typeof opts.assetBase === "string" && opts.assetBase ? opts.assetBase : typeof globalThis.location !== "undefined" && globalThis.location?.href && !/\/js\/[^/]+$/.test(globalThis.location.pathname || "") ? new URL("./", globalThis.location.href).href : "";
+      const base = root ? new URL("vendor/ort/", root.endsWith("/") ? root : root + "/").href : new URL("./ort/", import.meta.url).href;
       ort.env.wasm.wasmPaths = base;
     }
     ort.env.wasm.numThreads = resolveBrowserWasmThreads(opts);
@@ -21937,7 +21958,8 @@ export {
   encodeWav,
   hasValidLocalCache,
   loadNpz,
-  phonemize
+  phonemize,
+  setAssetBase
 };
 /*! Bundled license information:
 
