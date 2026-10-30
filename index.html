@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kitten TTS Nano – Offline Browser Demo</title>
+  <title>Kitten TTS Nano</title>
   <script type="importmap">
   {
     "imports": {
@@ -13,124 +13,453 @@
   </script>
   <style>
     :root {
-      --bg: #0f1117;
-      --card: #1a1d27;
-      --border: #2a2f3d;
-      --text: #e8eaed;
-      --muted: #9aa0a6;
-      --accent: #7c9cff;
-      --accent-hover: #9bb0ff;
+      --bg0: #0a0b10;
+      --bg1: #12141c;
+      --glass: rgba(255, 255, 255, 0.06);
+      --glass-strong: rgba(255, 255, 255, 0.1);
+      --glass-border: rgba(255, 255, 255, 0.14);
+      --glass-shine: rgba(255, 255, 255, 0.22);
+      --text: #f4f5f7;
+      --muted: rgba(244, 245, 247, 0.55);
+      --accent: #7aa2ff;
+      --accent-2: #c4b5fd;
       --success: #34d399;
-      --danger: #f87171;
-      --radius: 12px;
+      --danger: #fb7185;
+      --female: #f9a8d4;
+      --male: #93c5fd;
+      --radius: 22px;
+      --radius-sm: 14px;
+      --shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
       min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(122, 162, 255, 0.25), transparent 50%),
+        radial-gradient(ellipse 60% 40% at 90% 10%, rgba(196, 181, 253, 0.18), transparent 45%),
+        radial-gradient(ellipse 50% 50% at 50% 100%, rgba(52, 211, 153, 0.08), transparent 50%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+      background-attachment: fixed;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 2rem 1rem;
-      line-height: 1.5;
+      padding: 2rem 1rem 3rem;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
     }
-    .container { width: 100%; max-width: 640px; }
-    header { text-align: center; margin-bottom: 2rem; }
-    header h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.35rem; }
-    header p { color: var(--muted); font-size: 0.95rem; }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
+
+    .orb {
+      position: fixed;
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      filter: blur(60px);
+      opacity: 0.45;
+      pointer-events: none;
+      z-index: 0;
+      animation: float 12s ease-in-out infinite;
+    }
+    .orb-a {
+      top: 8%;
+      left: 12%;
+      background: radial-gradient(circle, #7aa2ff 0%, transparent 70%);
+    }
+    .orb-b {
+      top: 40%;
+      right: 8%;
+      background: radial-gradient(circle, #c4b5fd 0%, transparent 70%);
+      animation-delay: -4s;
+    }
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(20px, -30px) scale(1.08); }
+    }
+
+    .wrap {
+      width: 100%;
+      max-width: 720px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Liquid glass card */
+    .glass {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
       border-radius: var(--radius);
-      padding: 1.5rem;
-      margin-bottom: 1.25rem;
+      backdrop-filter: blur(28px) saturate(1.4);
+      -webkit-backdrop-filter: blur(28px) saturate(1.4);
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
     }
-    label {
-      display: block;
-      font-size: 0.85rem;
+    .glass::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: linear-gradient(135deg, var(--glass-shine) 0%, transparent 40%, transparent 60%, rgba(255,255,255,0.04) 100%);
+      pointer-events: none;
+    }
+
+    header.hero {
+      text-align: center;
+      margin-bottom: 1.75rem;
+      padding: 1.5rem 1rem;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.72rem;
       font-weight: 600;
-      color: var(--muted);
-      margin-bottom: 0.5rem;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      color: var(--accent);
+      background: rgba(122, 162, 255, 0.12);
+      border: 1px solid rgba(122, 162, 255, 0.25);
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      margin-bottom: 0.85rem;
     }
+    header h1 {
+      font-size: clamp(1.75rem, 4vw, 2.35rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      background: linear-gradient(135deg, #fff 0%, #c7d2fe 45%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.4rem;
+    }
+    header p { color: var(--muted); font-size: 0.95rem; }
+
+    .stack { display: flex; flex-direction: column; gap: 1rem; }
+
+    .panel { padding: 1.25rem 1.35rem; }
+
+    .label {
+      font-size: 0.72rem;
+      font-weight: 650;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.55rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
     textarea {
       width: 100%;
-      min-height: 120px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      padding: 0.85rem 1rem;
-      font-size: 1rem;
-      font-family: inherit;
+      min-height: 110px;
       resize: vertical;
+      background: rgba(0, 0, 0, 0.28);
+      border: 1px solid var(--glass-border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font: inherit;
+      font-size: 1rem;
+      padding: 0.9rem 1rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
-    textarea:focus { outline: none; border-color: var(--accent); }
-    textarea::placeholder { color: #5f6368; }
-    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.4rem; }
-    .hint.error { color: var(--danger); }
+    textarea:focus {
+      border-color: rgba(122, 162, 255, 0.5);
+      box-shadow: 0 0 0 3px rgba(122, 162, 255, 0.15);
+    }
+    textarea::placeholder { color: rgba(244, 245, 247, 0.35); }
+
+    .hint {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 0.45rem;
+    }
+    .hint.err { color: var(--danger); }
+
+    /* Voices */
+    .voice-section { margin-bottom: 0.85rem; }
+    .voice-section:last-child { margin-bottom: 0; }
+    .voice-section-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 0.45rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .voice-section-title.female { color: var(--female); }
+    .voice-section-title.male { color: var(--male); }
     .voices {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-      gap: 0.5rem;
-      margin-top: 0.25rem;
+      grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+      gap: 0.45rem;
     }
     .voice-btn {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
+      appearance: none;
+      border: 1px solid var(--glass-border);
+      background: rgba(255, 255, 255, 0.04);
       color: var(--text);
-      padding: 0.55rem 0.4rem;
-      font-size: 0.9rem;
+      border-radius: 12px;
+      padding: 0.55rem 0.35rem;
+      font-size: 0.88rem;
+      font-weight: 500;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: all 0.18s ease;
+      backdrop-filter: blur(8px);
     }
-    .voice-btn:hover { border-color: var(--accent); }
-    .voice-btn.active {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #0f1117;
+    .voice-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.28);
+      transform: translateY(-1px);
+    }
+    .voice-btn.active.female {
+      background: linear-gradient(135deg, rgba(249, 168, 212, 0.35), rgba(249, 168, 212, 0.12));
+      border-color: rgba(249, 168, 212, 0.55);
+      color: #fff;
       font-weight: 600;
+      box-shadow: 0 4px 16px rgba(249, 168, 212, 0.2);
     }
-    .controls { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.25rem; }
-    button.primary {
+    .voice-btn.active.male {
+      background: linear-gradient(135deg, rgba(147, 197, 253, 0.35), rgba(147, 197, 253, 0.12));
+      border-color: rgba(147, 197, 253, 0.55);
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 4px 16px rgba(147, 197, 253, 0.2);
+    }
+
+    /* Controls row */
+    .ctrl-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+    }
+    @media (max-width: 520px) {
+      .ctrl-grid { grid-template-columns: 1fr; }
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.65rem 0.85rem;
+      background: rgba(0, 0, 0, 0.22);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+    }
+    .toggle-row span {
+      font-size: 0.88rem;
+      font-weight: 500;
+    }
+    .toggle-row small {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-weight: 400;
+      margin-top: 0.15rem;
+    }
+
+    /* iOS-like switch */
+    .switch {
+      position: relative;
+      width: 48px;
+      height: 28px;
+      flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch .slider {
+      position: absolute;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: 0.25s;
+      border: 1px solid var(--glass-border);
+    }
+    .switch .slider::before {
+      content: "";
+      position: absolute;
+      width: 22px;
+      height: 22px;
+      left: 2px;
+      top: 2px;
+      background: #fff;
+      border-radius: 50%;
+      transition: 0.25s;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }
+    .switch input:checked + .slider {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      border-color: transparent;
+    }
+    .switch input:checked + .slider::before {
+      transform: translateX(20px);
+    }
+
+    /* Range */
+    .range-wrap {
+      padding: 0.65rem 0.85rem;
+      background: rgba(0, 0, 0, 0.22);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+    }
+    .range-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.45rem;
+    }
+    .range-top span { font-size: 0.88rem; font-weight: 500; }
+    .range-top strong {
+      font-size: 0.85rem;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #fff, #c7d2fe);
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(122, 162, 255, 0.4);
+      border: none;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      cursor: pointer;
+      border: none;
+    }
+
+    /* Advanced */
+    details.advanced {
+      border-radius: var(--radius);
+    }
+    details.advanced > summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 1rem 1.35rem;
+      font-weight: 600;
+      font-size: 0.92rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      user-select: none;
+    }
+    details.advanced > summary::-webkit-details-marker { display: none; }
+    details.advanced > summary::after {
+      content: "›";
+      margin-left: auto;
+      font-size: 1.25rem;
+      opacity: 0.5;
+      transition: transform 0.2s;
+    }
+    details.advanced[open] > summary::after {
+      transform: rotate(90deg);
+    }
+    .advanced-body {
+      padding: 0 1.35rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    select {
+      width: 100%;
+      appearance: none;
+      background: rgba(0, 0, 0, 0.28) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' stroke='%9aa0a6' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") right 0.9rem center no-repeat;
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      color: var(--text);
+      font: inherit;
+      font-size: 0.92rem;
+      padding: 0.7rem 2.2rem 0.7rem 0.9rem;
+      outline: none;
+      cursor: pointer;
+    }
+    select:focus {
+      border-color: rgba(122, 162, 255, 0.5);
+    }
+    select option { background: #1a1d27; color: #fff; }
+
+    .field { display: flex; flex-direction: column; gap: 0.4rem; }
+    .field .sub {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    /* Actions */
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      margin-top: 0.25rem;
+    }
+    .btn {
+      appearance: none;
+      border: none;
+      border-radius: 14px;
+      font: inherit;
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 0.8rem 1.35rem;
+      cursor: pointer;
+      transition: transform 0.15s, opacity 0.15s, box-shadow 0.15s;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
+    .btn:not(:disabled):hover { transform: translateY(-1px); }
+    .btn:not(:disabled):active { transform: translateY(0); }
+    .btn-primary {
       flex: 1;
       min-width: 140px;
-      background: var(--accent);
-      color: #0f1117;
-      border: none;
-      border-radius: 8px;
-      padding: 0.75rem 1.25rem;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
+      background: linear-gradient(135deg, #7aa2ff 0%, #a78bfa 100%);
+      color: #0a0b10;
+      box-shadow: 0 6px 24px rgba(122, 162, 255, 0.35);
     }
-    button.primary:hover:not(:disabled) { background: var(--accent-hover); }
-    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    button.secondary {
-      background: transparent;
-      border: 1px solid var(--border);
+    .btn-primary:not(:disabled):hover {
+      box-shadow: 0 8px 28px rgba(122, 162, 255, 0.45);
+    }
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--glass-border);
       color: var(--text);
-      border-radius: 8px;
-      padding: 0.75rem 1.25rem;
-      font-size: 0.95rem;
-      cursor: pointer;
+      backdrop-filter: blur(8px);
     }
-    button.secondary:hover:not(:disabled) { border-color: var(--accent); }
-    button.secondary:disabled { opacity: 0.4; cursor: not-allowed; }
-    .status { margin-top: 1rem; font-size: 0.9rem; color: var(--muted); min-height: 1.4em; }
+
+    .status {
+      margin-top: 0.85rem;
+      font-size: 0.88rem;
+      color: var(--muted);
+      min-height: 1.35em;
+    }
     .status.loading { color: var(--accent); }
     .status.success { color: var(--success); }
     .status.error { color: var(--danger); }
-    audio { width: 100%; margin-top: 1rem; border-radius: 8px; }
-    footer { margin-top: 2rem; text-align: center; font-size: 0.8rem; color: var(--muted); }
+
     .progress {
-      height: 4px;
-      background: var(--border);
-      border-radius: 2px;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
       margin-top: 0.75rem;
       overflow: hidden;
       display: none;
@@ -138,66 +467,155 @@
     .progress.active { display: block; }
     .progress-bar {
       height: 100%;
-      width: 30%;
-      background: var(--accent);
-      border-radius: 2px;
-      animation: slide 1.2s ease-in-out infinite;
+      width: 35%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      animation: slide 1.15s ease-in-out infinite;
     }
     @keyframes slide {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(400%); }
+      0% { transform: translateX(-120%); }
+      100% { transform: translateX(320%); }
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 0.85rem;
+      border-radius: 12px;
+      display: none;
+    }
+
+    footer {
+      margin-top: 1.75rem;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    footer code {
+      font-size: 0.72rem;
+      background: rgba(255,255,255,0.06);
+      padding: 0.1rem 0.35rem;
+      border-radius: 6px;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>😻 Kitten TTS Nano</h1>
-      <p>Fully offline · model + runtime hosted in this repo</p>
+  <div class="orb orb-a" aria-hidden="true"></div>
+  <div class="orb orb-b" aria-hidden="true"></div>
+
+  <div class="wrap">
+    <header class="hero">
+      <div class="badge">Offline · WASM · Local model</div>
+      <h1>Kitten TTS Nano</h1>
+      <p>Speech synthesis in your browser — liquid glass edition</p>
     </header>
 
-    <div class="card">
-      <label for="textInput">Text (English letters only)</label>
-      <textarea
-        id="textInput"
-        placeholder="Type English text here... e.g. Hello, this is a test of Kitten TTS."
-        maxlength="500"
-        spellcheck="false"
-      ></textarea>
-      <p class="hint" id="textHint">Only A–Z, a–z, spaces, and basic punctuation allowed.</p>
-    </div>
+    <div class="stack">
+      <!-- Text -->
+      <section class="glass panel">
+        <div class="label">Text <span style="font-weight:400;text-transform:none;letter-spacing:0">English only</span></div>
+        <textarea id="textInput" maxlength="800" spellcheck="false"
+          placeholder="Type something… e.g. Hello, this is Kitten TTS running fully offline."></textarea>
+        <p class="hint" id="textHint">Only A–Z, spaces, and basic punctuation.</p>
+      </section>
 
-    <div class="card">
-      <label>Voice</label>
-      <div class="voices" id="voiceList"></div>
-    </div>
+      <!-- Voices -->
+      <section class="glass panel">
+        <div class="label">Voice</div>
+        <div class="voice-section">
+          <div class="voice-section-title female">♀ Female</div>
+          <div class="voices" id="voicesFemale"></div>
+        </div>
+        <div class="voice-section">
+          <div class="voice-section-title male">♂ Male</div>
+          <div class="voices" id="voicesMale"></div>
+        </div>
+      </section>
 
-    <div class="card">
-      <div class="controls">
-        <button class="primary" id="generateBtn" disabled>Load Model First</button>
-        <button class="secondary" id="downloadBtn" disabled>Download WAV</button>
-      </div>
-      <div class="progress" id="progress"><div class="progress-bar"></div></div>
-      <p class="status" id="status">Initializing…</p>
-      <audio id="audioPlayer" controls style="display:none;"></audio>
+      <!-- Speed + Stream -->
+      <section class="glass panel">
+        <div class="ctrl-grid">
+          <div class="range-wrap">
+            <div class="range-top">
+              <span>Speed</span>
+              <strong id="speedVal">1.00×</strong>
+            </div>
+            <input type="range" id="speedRange" min="0.5" max="2" step="0.05" value="1" />
+          </div>
+          <div class="toggle-row">
+            <div>
+              <span>Direct stream</span>
+              <small>Play chunks while generating</small>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="streamToggle" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- Advanced -->
+      <details class="glass advanced">
+        <summary>Advanced</summary>
+        <div class="advanced-body">
+          <div class="field">
+            <div class="label" style="margin:0">Model</div>
+            <select id="modelSelect">
+              <option value="local/kitten-tts-nano" selected>Nano fp32 (local, ~57 MB) — WASM</option>
+            </select>
+            <p class="sub">Only the local Nano model is shipped offline. Runtime is WASM-only.</p>
+          </div>
+          <div class="field">
+            <div class="label" style="margin:0">WASM settings</div>
+            <div class="range-wrap">
+              <div class="range-top">
+                <span>Threads</span>
+                <strong id="threadsVal">1</strong>
+              </div>
+              <input type="range" id="threadsRange" min="1" max="4" step="1" value="1" />
+            </div>
+            <p class="sub">GitHub Pages has no SharedArrayBuffer — keep threads at 1 unless you self-host with COOP/COEP.</p>
+          </div>
+          <button type="button" class="btn btn-ghost" id="reloadBtn" style="align-self:flex-start">Reload model</button>
+        </div>
+      </details>
+
+      <!-- Generate -->
+      <section class="glass panel">
+        <div class="actions">
+          <button class="btn btn-primary" id="generateBtn" disabled>Load model first</button>
+          <button class="btn btn-ghost" id="downloadBtn" disabled>Download WAV</button>
+          <button class="btn btn-ghost" id="stopBtn" disabled>Stop</button>
+        </div>
+        <div class="progress" id="progress"><div class="progress-bar"></div></div>
+        <p class="status" id="status">Initializing…</p>
+        <audio id="audioPlayer" controls></audio>
+      </section>
     </div>
 
     <footer>
-      Model files in <code>./model/</code> · ORT + kit in <code>./vendor/</code> · no CDN
+      Model in <code>./model/</code> · runtime in <code>./vendor/</code> · no CDN
     </footer>
   </div>
 
   <script type="module">
     import { KittenTTS } from "./vendor/kitten-tts.js";
 
-    const VOICES = ["Bella", "Jasper", "Luna", "Bruno", "Rosie", "Hugo", "Kiki", "Leo"];
-    const MODEL_ID = "local/kitten-tts-nano";
+    const FEMALE = ["Bella", "Luna", "Rosie", "Kiki"];
+    const MALE = ["Jasper", "Bruno", "Hugo", "Leo"];
 
     const textInput = document.getElementById("textInput");
     const textHint = document.getElementById("textHint");
-    const voiceList = document.getElementById("voiceList");
+    const speedRange = document.getElementById("speedRange");
+    const speedVal = document.getElementById("speedVal");
+    const streamToggle = document.getElementById("streamToggle");
+    const threadsRange = document.getElementById("threadsRange");
+    const threadsVal = document.getElementById("threadsVal");
+    const modelSelect = document.getElementById("modelSelect");
     const generateBtn = document.getElementById("generateBtn");
     const downloadBtn = document.getElementById("downloadBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const reloadBtn = document.getElementById("reloadBtn");
     const statusEl = document.getElementById("status");
     const progress = document.getElementById("progress");
     const audioPlayer = document.getElementById("audioPlayer");
@@ -206,6 +624,10 @@
     let selectedVoice = "Jasper";
     let lastAudio = null;
     let lastBlobUrl = null;
+    let abortGen = false;
+    let audioCtx = null;
+    let playQueue = Promise.resolve();
+    let activeSources = [];
 
     const ALLOWED = /^[A-Za-z\s.,!?'";:\-()]+$/;
 
@@ -214,66 +636,120 @@
       statusEl.className = "status " + type;
     }
 
-    function filterInput(value) {
-      return value.replace(/[^A-Za-z\s.,!?'";:\-()]/g, "");
+    function filterInput(v) {
+      return v.replace(/[^A-Za-z\s.,!?'";:\-()]/g, "");
     }
 
     textInput.addEventListener("input", () => {
-      const filtered = filterInput(textInput.value);
-      if (filtered !== textInput.value) {
+      const f = filterInput(textInput.value);
+      if (f !== textInput.value) {
         const pos = textInput.selectionStart;
-        textInput.value = filtered;
+        textInput.value = f;
         textInput.setSelectionRange(Math.max(0, pos - 1), Math.max(0, pos - 1));
         textHint.textContent = "Non-English characters were removed.";
-        textHint.classList.add("error");
+        textHint.classList.add("err");
       } else {
-        textHint.textContent = "Only A–Z, a–z, spaces, and basic punctuation allowed.";
-        textHint.classList.remove("error");
+        textHint.textContent = "Only A–Z, spaces, and basic punctuation.";
+        textHint.classList.remove("err");
       }
     });
 
     textInput.addEventListener("paste", (e) => {
       e.preventDefault();
-      const text = (e.clipboardData || window.clipboardData).getData("text");
-      document.execCommand("insertText", false, filterInput(text));
+      const t = (e.clipboardData || window.clipboardData).getData("text");
+      document.execCommand("insertText", false, filterInput(t));
     });
 
-    VOICES.forEach((v) => {
+    speedRange.addEventListener("input", () => {
+      speedVal.textContent = Number(speedRange.value).toFixed(2) + "×";
+    });
+    threadsRange.addEventListener("input", () => {
+      threadsVal.textContent = threadsRange.value;
+    });
+
+    function makeVoiceBtn(name, gender) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "voice-btn" + (v === selectedVoice ? " active" : "");
-      btn.textContent = v;
+      btn.className = "voice-btn " + gender + (name === selectedVoice ? " active" : "");
+      btn.textContent = name;
+      btn.dataset.voice = name;
+      btn.dataset.gender = gender;
       btn.addEventListener("click", () => {
-        selectedVoice = v;
+        selectedVoice = name;
         document.querySelectorAll(".voice-btn").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
       });
-      voiceList.appendChild(btn);
-    });
+      return btn;
+    }
+
+    const vf = document.getElementById("voicesFemale");
+    const vm = document.getElementById("voicesMale");
+    FEMALE.forEach((v) => vf.appendChild(makeVoiceBtn(v, "female")));
+    MALE.forEach((v) => vm.appendChild(makeVoiceBtn(v, "male")));
+
+    function stopPlayback() {
+      abortGen = true;
+      activeSources.forEach((s) => {
+        try { s.stop(); } catch (_) {}
+      });
+      activeSources = [];
+      playQueue = Promise.resolve();
+      if (audioCtx && audioCtx.state === "running") {
+        /* keep context */
+      }
+      stopBtn.disabled = true;
+    }
+
+    function ensureAudioCtx() {
+      if (!audioCtx) audioCtx = new AudioContext({ sampleRate: 24000 });
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      return audioCtx;
+    }
+
+    function enqueuePlay(float32, sampleRate) {
+      const ctx = ensureAudioCtx();
+      playQueue = playQueue.then(() => new Promise((resolve) => {
+        if (abortGen) { resolve(); return; }
+        const buf = ctx.createBuffer(1, float32.length, sampleRate);
+        buf.copyToChannel(float32, 0);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        activeSources.push(src);
+        src.onended = () => {
+          activeSources = activeSources.filter((s) => s !== src);
+          resolve();
+        };
+        src.start();
+      }));
+      return playQueue;
+    }
 
     async function loadModel() {
-      setStatus("Loading local model (~57 MB)…", "loading");
+      setStatus("Loading local model…", "loading");
       progress.classList.add("active");
       generateBtn.disabled = true;
+      downloadBtn.disabled = true;
 
       try {
-        tts = await KittenTTS.from_pretrained(MODEL_ID, {
+        if (tts && tts.release) {
+          try { await tts.release(); } catch (_) {}
+        }
+        const modelId = modelSelect.value;
+        const threads = Number(threadsRange.value) || 1;
+        tts = await KittenTTS.from_pretrained(modelId, {
           runtime: "cpu",
           wasmSimd: true,
-          wasmThreads: 1,
+          wasmThreads: threads,
         });
-        setStatus("Model ready. Type text and press Generate.", "success");
-        generateBtn.textContent = "Generate Speech";
+        setStatus("Model ready — type text and generate.", "success");
+        generateBtn.textContent = "Generate speech";
         generateBtn.disabled = false;
       } catch (err) {
         console.error(err);
-        setStatus("Failed to load model: " + (err.message || err), "error");
-        generateBtn.textContent = "Retry Load";
+        setStatus("Failed: " + (err && err.message ? err.message : err), "error");
+        generateBtn.textContent = "Retry load";
         generateBtn.disabled = false;
-        generateBtn.onclick = () => {
-          generateBtn.onclick = null;
-          loadModel();
-        };
       } finally {
         progress.classList.remove("active");
       }
@@ -281,59 +757,113 @@
 
     async function generate() {
       const text = textInput.value.trim();
-      if (!text) {
-        setStatus("Please enter some text.", "error");
-        return;
-      }
-      if (!ALLOWED.test(text)) {
-        setStatus("Text contains invalid characters.", "error");
-        return;
-      }
-      if (!tts) {
-        setStatus("Model not loaded yet.", "error");
-        return;
-      }
+      if (!text) { setStatus("Enter some text.", "error"); return; }
+      if (!ALLOWED.test(text)) { setStatus("Invalid characters.", "error"); return; }
+      if (!tts) { setStatus("Model not loaded.", "error"); return; }
 
+      abortGen = false;
       generateBtn.disabled = true;
       downloadBtn.disabled = true;
+      stopBtn.disabled = false;
       progress.classList.add("active");
-      setStatus("Generating speech…", "loading");
       audioPlayer.style.display = "none";
+      if (lastBlobUrl) { URL.revokeObjectURL(lastBlobUrl); lastBlobUrl = null; }
+      lastAudio = null;
+
+      const speed = Number(speedRange.value) || 1;
+      const stream = streamToggle.checked;
+      const opts = { voice: selectedVoice, speed };
 
       try {
-        const audio = await tts.generate(text, {
-          voice: selectedVoice,
-          speed: 1.0,
-        });
-        lastAudio = audio;
-        const blob = audio.toBlob();
-        if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);
-        lastBlobUrl = URL.createObjectURL(blob);
-        audioPlayer.src = lastBlobUrl;
-        audioPlayer.style.display = "block";
-        audioPlayer.play().catch(() => {});
-        downloadBtn.disabled = false;
-        setStatus("Done · " + audio.duration.toFixed(2) + "s · voice: " + selectedVoice, "success");
+        if (stream) {
+          setStatus("Streaming…", "loading");
+          const chunks = [];
+          let i = 0;
+          for await (const { text: chunkText, audio } of tts.stream(text, opts)) {
+            if (abortGen) break;
+            i += 1;
+            chunks.push(audio.data);
+            setStatus("Streaming chunk " + i + " — “" + chunkText.slice(0, 40) + (chunkText.length > 40 ? "…" : "") + "”", "loading");
+            enqueuePlay(audio.data, audio.sampling_rate);
+          }
+          if (!abortGen && chunks.length) {
+            const total = chunks.reduce((n, a) => n + a.length, 0);
+            const combined = new Float32Array(total);
+            let off = 0;
+            for (const c of chunks) { combined.set(c, off); off += c.length; }
+            lastAudio = { data: combined, sampling_rate: 24000, duration: total / 24000, toBlob() {
+              // reuse encode via temporary RawAudio if available through last generate path
+              const wav = floatToWav(combined, 24000);
+              return new Blob([wav], { type: "audio/wav" });
+            }};
+            downloadBtn.disabled = false;
+            setStatus("Done · " + lastAudio.duration.toFixed(2) + "s · " + selectedVoice + " · stream", "success");
+          } else if (abortGen) {
+            setStatus("Stopped.", "error");
+          }
+        } else {
+          setStatus("Generating…", "loading");
+          const audio = await tts.generate(text, opts);
+          if (abortGen) { setStatus("Stopped.", "error"); return; }
+          lastAudio = audio;
+          const blob = audio.toBlob();
+          lastBlobUrl = URL.createObjectURL(blob);
+          audioPlayer.src = lastBlobUrl;
+          audioPlayer.style.display = "block";
+          audioPlayer.play().catch(() => {});
+          downloadBtn.disabled = false;
+          setStatus("Done · " + audio.duration.toFixed(2) + "s · " + selectedVoice, "success");
+        }
       } catch (err) {
         console.error(err);
-        setStatus("Generation failed: " + (err.message || err), "error");
+        setStatus("Generation failed: " + (err && err.message ? err.message : err), "error");
       } finally {
         generateBtn.disabled = false;
+        stopBtn.disabled = true;
         progress.classList.remove("active");
       }
     }
 
+    function floatToWav(float32Array, sampleRate) {
+      const numSamples = float32Array.length;
+      const buffer = new ArrayBuffer(44 + numSamples * 2);
+      const view = new DataView(buffer);
+      const writeStr = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + numSamples * 2, true);
+      writeStr(8, "WAVE");
+      writeStr(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeStr(36, "data");
+      view.setUint32(40, numSamples * 2, true);
+      let offset = 44;
+      for (let i = 0; i < numSamples; i++, offset += 2) {
+        let s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      }
+      return buffer;
+    }
+
     downloadBtn.addEventListener("click", () => {
       if (!lastAudio) return;
-      const blob = lastAudio.toBlob();
+      const blob = typeof lastAudio.toBlob === "function" ? lastAudio.toBlob() : new Blob([floatToWav(lastAudio.data, 24000)], { type: "audio/wav" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "kitten-tts-" + selectedVoice.toLowerCase() + "-" + Date.now() + ".wav";
+      a.download = "kitten-" + selectedVoice.toLowerCase() + "-" + Date.now() + ".wav";
       a.click();
       URL.revokeObjectURL(a.href);
     });
 
     generateBtn.addEventListener("click", generate);
+    stopBtn.addEventListener("click", stopPlayback);
+    reloadBtn.addEventListener("click", () => loadModel());
+
     loadModel();
   </script>
 </body>
