@@ -20657,6 +20657,8 @@ var HF_BASE = "https://huggingface.co";
 var CACHE_DIR_NAME = "kitten-tts";
 var MODELS = {
   "local/kitten-tts-nano": { label: "local nano fp32 (~57 MB)" },
+  "local/kitten-tts-micro": { label: "local micro (~40 MB)" },
+  "local/kitten-tts-mini": { label: "local mini (~80 MB)" },
   "KittenML/kitten-tts-nano-0.8-int8": { label: "nano int8 (~24 MB)" },
   "KittenML/kitten-tts-nano-0.8-fp32": { label: "nano fp32 (~57 MB)" },
   // Legacy alias — HuggingFace redirects this to kitten-tts-nano-0.8-fp32
@@ -20772,22 +20774,81 @@ async function resolveModelConfig(repoId) {
   }
 }
 async function downloadModel(repoId, opts = {}) {
-  if (repoId === "local/kitten-tts-nano") {
+  const onProgress = typeof opts.onProgress === "function" ? opts.onProgress : null;
+  const LOCAL_MODELS = {
+    "local/kitten-tts-nano": { dir: "nano", approxBytes: 57e6 },
+    "local/kitten-tts-micro": { dir: "micro", approxBytes: 41e6 },
+    "local/kitten-tts-mini": { dir: "mini", approxBytes: 78e6 }
+  };
+  async function fetchWithProgress(url, fileLabel, approx) {
+    const cacheKey = "local-v1:" + fileLabel;
+    try {
+      if (typeof caches !== "undefined") {
+        const cache = await caches.open("kitten-tts-models");
+        const hit = await cache.match(cacheKey);
+        if (hit) {
+          const buf2 = await hit.arrayBuffer();
+          if (onProgress) onProgress({ file: fileLabel, loaded: buf2.byteLength, total: buf2.byteLength, phase: "cache" });
+          return buf2;
+        }
+      }
+    } catch (_2) {
+    }
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Failed to fetch ${fileLabel}: HTTP ${resp.status}`);
+    const totalHeader = Number(resp.headers.get("content-length") || 0);
+    const total = totalHeader > 0 ? totalHeader : approx;
+    if (!resp.body || !resp.body.getReader) {
+      const buf2 = await resp.arrayBuffer();
+      if (onProgress) onProgress({ file: fileLabel, loaded: buf2.byteLength, total: buf2.byteLength, phase: "download" });
+      try {
+        if (typeof caches !== "undefined") {
+          const cache = await caches.open("kitten-tts-models");
+          await cache.put(cacheKey, new Response(buf2.slice(0), { headers: { "Content-Type": "application/octet-stream" } }));
+        }
+      } catch (_2) {
+      }
+      return buf2;
+    }
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.byteLength;
+      if (onProgress) onProgress({ file: fileLabel, loaded, total: Math.max(total, loaded), phase: "download" });
+    }
+    const out = new Uint8Array(loaded);
+    let off = 0;
+    for (const c2 of chunks) {
+      out.set(c2, off);
+      off += c2.byteLength;
+    }
+    const buf = out.buffer;
+    try {
+      if (typeof caches !== "undefined") {
+        const cache = await caches.open("kitten-tts-models");
+        await cache.put(cacheKey, new Response(buf.slice(0), { headers: { "Content-Type": "application/octet-stream" } }));
+      }
+    } catch (_2) {
+    }
+    if (onProgress) onProgress({ file: fileLabel, loaded, total: loaded, phase: "done" });
+    return buf;
+  }
+  if (LOCAL_MODELS[repoId]) {
+    const meta = LOCAL_MODELS[repoId];
     const base = new URL("./model/", globalThis.location?.href || "http://localhost/").href;
-    const [configResp, modelResp, voicesResp] = await Promise.all([
-      fetch(base + "config.json"),
-      fetch(base + "kitten_tts_nano_v0_8.onnx"),
-      fetch(base + "voices.npz")
+    const dir = meta.dir;
+    if (onProgress) onProgress({ file: dir, loaded: 0, total: meta.approxBytes, phase: "start" });
+    const configText = new TextDecoder().decode(await fetchWithProgress(base + dir + "/config.json", dir + "/config.json", 2048));
+    const config2 = JSON.parse(configText);
+    const [modelBuffer2, voicesBuffer2] = await Promise.all([
+      fetchWithProgress(base + dir + "/model.onnx", dir + "/model.onnx", meta.approxBytes),
+      fetchWithProgress(base + "voices.npz", "voices.npz", 33e5)
     ]);
-    if (!configResp.ok) throw new Error(`Failed to load local config.json: ${configResp.status}`);
-    if (!modelResp.ok) throw new Error(`Failed to load local model onnx: ${modelResp.status}`);
-    if (!voicesResp.ok) throw new Error(`Failed to load local voices.npz: ${voicesResp.status}`);
-    const config2 = await configResp.json();
-    return {
-      modelBuffer: await modelResp.arrayBuffer(),
-      voicesBuffer: await voicesResp.arrayBuffer(),
-      config: config2
-    };
+    return { modelBuffer: modelBuffer2, voicesBuffer: voicesBuffer2, config: config2 };
   }
   if (!MODELS[repoId]) {
     throw new Error(`Unknown model: ${repoId}. Available: ${Object.keys(MODELS).join(", ")}`);
